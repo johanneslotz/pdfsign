@@ -1,0 +1,427 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --danger: #ef4444;
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --radius: 8px;
+  --shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  z-index: 10;
+}
+
+.file-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.toolbar-right {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── Buttons ── */
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 7px 13px;
+  transition: background 0.12s, opacity 0.12s;
+  white-space: nowrap;
+}
+
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--bg); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 6px;
+}
+.btn-ghost:hover:not(:disabled) { background: var(--bg); }
+
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover:not(:disabled) { background: #dc2626; }
+
+.btn-icon { background: var(--primary); color: #fff; }
+.btn-icon:hover:not(:disabled) { background: var(--primary-dark); }
+
+/* ── Main ── */
+#main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  min-height: 300px;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+  border: 2px dashed var(--border);
+  margin: 24px;
+  border-radius: 16px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.drop-zone.drag-over {
+  background: #eff6ff;
+  border-color: var(--primary);
+}
+
+.drop-zone h2 { font-size: 20px; color: var(--text); }
+.drop-zone p { font-size: 14px; }
+
+.hidden { display: none !important; }
+
+/* ── PDF pages ── */
+.pdf-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 16px;
+}
+
+.page-wrapper {
+  position: relative;
+  background: white;
+  box-shadow: var(--shadow);
+  border-radius: 4px;
+  line-height: 0;
+}
+
+.page-wrapper canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Form field overlays ── */
+.form-field-overlay {
+  position: absolute;
+  background: rgba(255, 255, 150, 0.35);
+  border: 1px solid rgba(0,0,0,0.2);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 1px 3px;
+  outline: none;
+  color: #000;
+}
+
+.form-field-overlay:focus {
+  background: rgba(255, 255, 150, 0.65);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.25);
+  z-index: 5;
+}
+
+textarea.form-field-overlay { resize: none; }
+
+/* ── Signature overlay on PDF ── */
+.sig-overlay {
+  position: absolute;
+  cursor: move;
+  border: 2px dashed var(--primary);
+  border-radius: 2px;
+  z-index: 20;
+  user-select: none;
+  touch-action: none;
+}
+
+.sig-overlay.confirmed {
+  border: none;
+  cursor: default;
+}
+
+.sig-overlay img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.sig-overlay-controls {
+  position: absolute;
+  top: -30px;
+  left: 0;
+  display: flex;
+  gap: 4px;
+}
+
+.sig-overlay-btn {
+  padding: 3px 7px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* Resize handle */
+.sig-resize-handle {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  width: 14px;
+  height: 14px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: se-resize;
+  z-index: 21;
+  touch-action: none;
+}
+
+/* Placement mode indicator */
+.placement-mode-banner {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 50;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.placement-mode-banner button {
+  background: #ef4444;
+  color: #fff;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* ── Modal ── */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 600px) {
+  .modal { align-items: center; }
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+}
+
+.modal-content {
+  position: relative;
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+  padding: 20px 20px 32px;
+  width: 100%;
+  max-width: 680px;
+  max-height: 92dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+}
+
+@media (min-width: 600px) {
+  .modal-content {
+    border-radius: 16px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.modal-header h2 { font-size: 18px; }
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* ── Signature canvas ── */
+.sig-canvas-wrapper {
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #fff;
+  touch-action: none;
+}
+
+#sig-canvas {
+  display: block;
+  width: 100%;
+  cursor: crosshair;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 39px,
+      #e2e8f0 39px,
+      #e2e8f0 40px
+    );
+  touch-action: none;
+}
+
+/* ── Saved signatures ── */
+.saved-sigs-section { margin-top: 20px; }
+
+.saved-sigs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sig-item {
+  position: relative;
+  padding: 8px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  background: #f8fafc;
+  transition: border-color 0.12s;
+  display: flex;
+  align-items: center;
+}
+
+.sig-item:hover { border-color: #94a3b8; }
+.sig-item.selected { border-color: var(--primary); background: #eff6ff; }
+
+.sig-item img {
+  max-height: 56px;
+  max-width: 180px;
+  display: block;
+}
+
+.sig-item-del {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--danger);
+  color: white;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+}
+
+.no-sigs {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+/* ── Toast ── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 24px;
+  font-size: 13px;
+  z-index: 200;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .toolbar { padding: 6px 8px; }
+  .toolbar-right { gap: 4px; }
+  button { padding: 6px 10px; font-size: 12px; }
+  .pdf-pages { padding: 12px 8px; gap: 12px; }
+}

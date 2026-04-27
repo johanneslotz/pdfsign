@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#2563eb">
+  <title>PDF Sign</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+</head>
+<body>
+
+  <header class="toolbar">
+    <button id="btn-open" class="btn-icon" title="Open PDF">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Open
+    </button>
+    <input type="file" id="file-input" accept=".pdf" hidden>
+
+    <span id="file-name" class="file-name">No file open</span>
+
+    <div class="toolbar-right">
+      <button id="btn-signature" class="btn-secondary" disabled title="Manage signatures">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Signature
+      </button>
+      <button id="btn-place-sig" class="btn-secondary" disabled title="Place signature on PDF">Place</button>
+      <button id="btn-save" class="btn-primary" disabled title="Save signed PDF">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Save PDF
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="drop-zone" class="drop-zone">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="12" x2="12" y2="18"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+      <h2>Open a PDF to get started</h2>
+      <p>Tap <strong>Open</strong> or drop a PDF here</p>
+    </div>
+    <div id="pdf-pages" class="pdf-pages hidden"></div>
+  </main>
+
+  <!-- Signature modal -->
+  <div id="sig-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Signature manager">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Signature</h2>
+        <button id="sig-modal-close" class="btn-ghost" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <p class="label">Draw your signature below</p>
+      <div class="sig-canvas-wrapper">
+        <canvas id="sig-canvas" width="600" height="180"></canvas>
+      </div>
+      <div class="modal-actions">
+        <button id="sig-clear" class="btn-secondary">Clear</button>
+        <button id="sig-save" class="btn-primary">Save Signature</button>
+      </div>
+
+      <div class="saved-sigs-section">
+        <p class="label">Saved signatures — tap to select</p>
+        <div id="saved-sigs" class="saved-sigs"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+  </script>
+</body>
+</html>
