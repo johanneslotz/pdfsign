@@ -16,8 +16,7 @@ function init() {
   viewer = new PDFViewer(document.getElementById('pdf-pages'));
   sigPad = new SignaturePad(document.getElementById('sig-canvas'));
 
-  document.getElementById('btn-open').onclick        = () => document.getElementById('file-input').click();
-  document.getElementById('file-input').onchange     = onFileSelected;
+  document.getElementById('file-input').addEventListener('change', onFileSelected);
   document.getElementById('btn-signature').onclick   = openSigModal;
   document.getElementById('btn-place-sig').onclick   = startPlacement;
   document.getElementById('btn-add-text').onclick    = startTextMode;

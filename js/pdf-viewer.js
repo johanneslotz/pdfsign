@@ -43,10 +43,9 @@ export class PDFViewer {
 
     wrapper.addEventListener('click', e => this._onPageClick(e, info));
     wrapper.addEventListener('touchend', e => {
-      if (this.placementMode) {
+      if (this.placementMode || this.textMode) {
         e.preventDefault();
-        const t = e.changedTouches[0];
-        this._onPageClick(t, info);
+        this._onPageClick(e.changedTouches[0], info);
       }
     }, { passive: false });
 
