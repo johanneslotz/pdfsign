@@ -23,6 +23,13 @@ function init() {
   document.getElementById('btn-save').onclick        = savePDF;
   document.getElementById('sig-modal-close').onclick = closeSigModal;
   document.getElementById('sig-clear').onclick       = () => sigPad.clear();
+
+  const lwSlider = document.getElementById('sig-linewidth');
+  const lwVal    = document.getElementById('sig-linewidth-val');
+  lwSlider.oninput = () => {
+    sigPad.lineWidth   = parseFloat(lwSlider.value);
+    lwVal.textContent  = lwSlider.value + 'px';
+  };
   document.getElementById('sig-save').onclick        = onSaveSig;
   document.querySelector('.modal-backdrop').onclick  = closeSigModal;
 
