@@ -155,6 +155,26 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   height: auto;
 }
 
+/* ── Free-text overlay ── */
+.free-text-overlay {
+  position: absolute;
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed rgba(37,99,235,0.5);
+  font-size: 14px;
+  font-family: inherit;
+  color: #000;
+  outline: none;
+  min-width: 80px;
+  padding: 0 2px;
+  z-index: 15;
+  cursor: text;
+}
+
+.free-text-overlay:not(:focus) {
+  cursor: move;
+}
+
 /* ── Form field overlays ── */
 .form-field-overlay {
   position: absolute;
@@ -334,10 +354,12 @@ textarea.form-field-overlay { resize: none; }
   align-items: center;
   gap: 10px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .sig-toolbar input[type="range"] {
   flex: 1;
+  min-width: 80px;
   accent-color: var(--primary);
   cursor: pointer;
 }
@@ -347,6 +369,52 @@ textarea.form-field-overlay { resize: none; }
   color: var(--text-muted);
   width: 28px;
   text-align: right;
+}
+
+.sig-toolbar input[type="color"] {
+  width: 32px;
+  height: 28px;
+  padding: 1px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+}
+
+.color-presets {
+  display: flex;
+  gap: 5px;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: border-color 0.12s, transform 0.1s;
+}
+
+.color-swatch:hover  { transform: scale(1.15); }
+.color-swatch.active { border-color: var(--primary); }
+
+/* ── File input (offscreen, label triggers it reliably on Android) ── */
+.file-input-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Labels styled as buttons */
+.btn-label {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
 }
 
 /* ── Signature canvas ── */

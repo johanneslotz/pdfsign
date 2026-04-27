@@ -4,8 +4,9 @@ export class PDFViewer {
     this.pdfDoc = null;
     this.pages = [];
     this.placementMode = false;
+    this.textMode      = false;
     this.onPlaceSignature = null;
-    this._sigOverlayData = new WeakMap();
+    this._sigOverlayData  = new WeakMap();
   }
 
   async load(arrayBuffer) {
@@ -103,13 +104,80 @@ export class PDFViewer {
   }
 
   _onPageClick(e, info) {
-    if (!this.placementMode) return;
     const rect   = info.canvas.getBoundingClientRect();
     const clickX = (e.clientX - rect.left) * (info.canvas.width  / rect.width);
     const clickY = (e.clientY - rect.top)  * (info.canvas.height / rect.height);
     const pdfX   = clickX / info.scale;
     const pdfY   = info.naturalVP.height - clickY / info.scale;
-    if (this.onPlaceSignature) this.onPlaceSignature(info.num, pdfX, pdfY, info);
+
+    if (this.placementMode && this.onPlaceSignature) {
+      this.onPlaceSignature(info.num, pdfX, pdfY, info);
+    } else if (this.textMode) {
+      this._addFreeTextOverlay(info, pdfX, pdfY, clickX, clickY);
+      this.disableTextMode();
+    }
+  }
+
+  _addFreeTextOverlay(info, pdfX, pdfY, canvasX, canvasY) {
+    const input = document.createElement('input');
+    input.type  = 'text';
+    input.className = 'free-text-overlay';
+    input.placeholder = 'Type here…';
+    Object.assign(input.style, {
+      position: 'absolute',
+      left:     canvasX + 'px',
+      top:      canvasY + 'px',
+    });
+    input.dataset.pageNum = info.num;
+    input.dataset.pdfX    = pdfX;
+    input.dataset.pdfY    = pdfY;
+    info.wrapper.appendChild(input);
+    input.focus();
+
+    // Make draggable via the same approach as signatures
+    this._makeDraggableInput(input, info);
+  }
+
+  _makeDraggableInput(el, info) {
+    let ox, oy, ol, ot;
+    // Drag starts only on pointerdown on the element itself (not while typing)
+    el.addEventListener('pointerdown', e => {
+      if (document.activeElement === el) return; // let clicks through when focused
+      e.preventDefault();
+      ol = parseInt(el.style.left); ot = parseInt(el.style.top);
+      ox = e.clientX; oy = e.clientY;
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', e => {
+      if (!e.buttons) return;
+      if (document.activeElement === el) return;
+      el.style.left = (ol + e.clientX - ox) + 'px';
+      el.style.top  = (ot + e.clientY - oy) + 'px';
+      el.dataset.pdfX = (parseInt(el.style.left))  / info.scale;
+      el.dataset.pdfY = info.naturalVP.height - (parseInt(el.style.top)) / info.scale;
+    });
+  }
+
+  getFreeTextAnnotations() {
+    return Array.from(this.container.querySelectorAll('.free-text-overlay'))
+      .filter(el => el.value.trim())
+      .map(el => ({
+        pageNum:  parseInt(el.dataset.pageNum),
+        pdfX:     parseFloat(el.dataset.pdfX),
+        pdfY:     parseFloat(el.dataset.pdfY),
+        text:     el.value,
+        fontSize: parseInt(getComputedStyle(el).fontSize) || 14,
+      }));
+  }
+
+  enableTextMode() {
+    this.textMode = true;
+    this.container.style.cursor = 'text';
+  }
+
+  disableTextMode() {
+    this.textMode = false;
+    this.container.style.cursor = '';
   }
 
   addSignatureOverlay(info, pdfX, pdfY, sigDataUrl, displayWidth = 150) {

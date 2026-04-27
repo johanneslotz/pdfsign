@@ -33,6 +33,7 @@
         Signature
       </button>
       <button id="btn-place-sig" class="btn-secondary" disabled title="Place signature on PDF">Place</button>
+      <button id="btn-add-text"  class="btn-secondary" disabled title="Add text anywhere on the PDF">Add text</button>
       <button id="btn-save" class="btn-primary" disabled title="Save signed PDF">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Save PDF
@@ -61,9 +62,17 @@
       </div>
 
       <div class="sig-toolbar">
-        <label class="label" for="sig-linewidth" style="margin-bottom:0">Line width</label>
+        <label class="label" for="sig-linewidth" style="margin-bottom:0">Width</label>
         <input type="range" id="sig-linewidth" min="1" max="12" value="2" step="0.5">
         <span id="sig-linewidth-val">2px</span>
+        <label class="label" for="sig-color" style="margin-bottom:0;margin-left:10px">Color</label>
+        <input type="color" id="sig-color" value="#1e293b" title="Signature color">
+        <div class="color-presets">
+          <button class="color-swatch" data-color="#1e293b" style="background:#1e293b" title="Black"></button>
+          <button class="color-swatch" data-color="#1a237e" style="background:#1a237e" title="Dark blue"></button>
+          <button class="color-swatch" data-color="#1565c0" style="background:#1565c0" title="Blue"></button>
+          <button class="color-swatch" data-color="#7f0000" style="background:#7f0000" title="Dark red"></button>
+        </div>
       </div>
       <div class="sig-canvas-wrapper">
         <canvas id="sig-canvas" width="600" height="180"></canvas>
@@ -75,12 +84,12 @@
 
       <div class="sig-import-row">
         <span class="label" style="margin-bottom:0;align-self:center">Or import</span>
-        <button id="sig-import-png" class="btn-secondary">PNG / JPG</button>
-        <button id="sig-import-json" class="btn-secondary">JSON backup</button>
+        <label for="sig-png-input"  class="btn-secondary btn-label">PNG / JPG</label>
+        <label for="sig-json-input" class="btn-secondary btn-label">JSON backup</label>
         <button id="sig-export" class="btn-secondary" style="margin-left:auto">Export all</button>
       </div>
-      <input type="file" id="sig-png-input"  accept="image/png,image/jpeg,image/webp" hidden>
-      <input type="file" id="sig-json-input" accept=".json" hidden>
+      <input type="file" id="sig-png-input"  accept="image/png,image/jpeg,image/webp" class="file-input-hidden">
+      <input type="file" id="sig-json-input" accept=".json"                            class="file-input-hidden">
 
       <div class="saved-sigs-section">
         <p class="label">Saved signatures — tap to select</p>

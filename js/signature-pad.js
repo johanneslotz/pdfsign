@@ -6,6 +6,7 @@ export class SignaturePad {
     this.lastX = 0;
     this.lastY = 0;
     this.lineWidth = 2.5;
+    this.color     = '#1e293b';
     this._bind();
   }
 
@@ -36,7 +37,7 @@ export class SignaturePad {
     this.lastY = y;
     this.ctx.beginPath();
     this.ctx.arc(x, y, this.lineWidth / 2, 0, Math.PI * 2);
-    this.ctx.fillStyle = '#1e293b';
+    this.ctx.fillStyle = this.color;
     this.ctx.fill();
   }
 
@@ -47,7 +48,7 @@ export class SignaturePad {
     ctx.beginPath();
     ctx.moveTo(this.lastX, this.lastY);
     ctx.lineTo(x, y);
-    ctx.strokeStyle = '#1e293b';
+    ctx.strokeStyle = this.color;
     ctx.lineWidth = this.lineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';

@@ -49,6 +49,20 @@ export class PDFEditor {
     }
   }
 
+  applyFreeText(annotations) {
+    const { rgb } = PDFLib;
+    for (const { pageNum, pdfX, pdfY, text, fontSize } of annotations) {
+      const page = this.doc.getPage(pageNum - 1);
+      // pdfY is the top of the text line; drawText y is baseline — offset by ~font size
+      page.drawText(text, {
+        x:        pdfX,
+        y:        pdfY - fontSize,
+        size:     fontSize,
+        color:    rgb(0, 0, 0),
+      });
+    }
+  }
+
   async getBytes() {
     return this.doc.save();
   }

@@ -20,6 +20,7 @@ function init() {
   document.getElementById('file-input').onchange     = onFileSelected;
   document.getElementById('btn-signature').onclick   = openSigModal;
   document.getElementById('btn-place-sig').onclick   = startPlacement;
+  document.getElementById('btn-add-text').onclick    = startTextMode;
   document.getElementById('btn-save').onclick        = savePDF;
   document.getElementById('sig-modal-close').onclick = closeSigModal;
   document.getElementById('sig-clear').onclick       = () => sigPad.clear();
@@ -33,11 +34,19 @@ function init() {
   document.getElementById('sig-save').onclick        = onSaveSig;
   document.querySelector('.modal-backdrop').onclick  = closeSigModal;
 
-  document.getElementById('sig-import-png').onclick  = () => document.getElementById('sig-png-input').click();
-  document.getElementById('sig-import-json').onclick = () => document.getElementById('sig-json-input').click();
   document.getElementById('sig-export').onclick      = exportSignatures;
   document.getElementById('sig-png-input').onchange  = onImportPng;
   document.getElementById('sig-json-input').onchange = onImportJson;
+
+  const colorPicker = document.getElementById('sig-color');
+  colorPicker.oninput = () => setColor(colorPicker.value);
+
+  document.querySelectorAll('.color-swatch').forEach(btn => {
+    btn.onclick = () => { colorPicker.value = btn.dataset.color; setColor(btn.dataset.color); };
+  });
+
+  // Mark first swatch active by default
+  document.querySelector('.color-swatch').classList.add('active');
 
   viewer.onPlaceSignature = onSignaturePlaced;
 
@@ -80,6 +89,7 @@ async function loadFile(file) {
 
   document.getElementById('btn-signature').disabled  = false;
   document.getElementById('btn-place-sig').disabled  = false;
+  document.getElementById('btn-add-text').disabled   = false;
   document.getElementById('btn-save').disabled       = false;
   toast('PDF loaded');
 }
@@ -171,6 +181,29 @@ function cancelPlacement() {
   if (placementBanner) { placementBanner.remove(); placementBanner = null; }
 }
 
+// ── Free-text mode ───────────────────────────────────────────────────────────
+
+let textBanner = null;
+
+function startTextMode() {
+  viewer.enableTextMode();
+  if (!textBanner) {
+    textBanner = document.createElement('div');
+    textBanner.className = 'placement-mode-banner';
+    textBanner.innerHTML = `
+      <span>Tap the PDF where you want to add text</span>
+      <button id="btn-cancel-text">Cancel</button>
+    `;
+    document.body.appendChild(textBanner);
+    document.getElementById('btn-cancel-text').onclick = cancelTextMode;
+  }
+}
+
+function cancelTextMode() {
+  viewer.disableTextMode();
+  if (textBanner) { textBanner.remove(); textBanner = null; }
+}
+
 function onSignaturePlaced(pageNum, pdfX, pdfY, pageInfo) {
   viewer.addSignatureOverlay(pageInfo, pdfX, pdfY, selectedSigDataUrl);
   cancelPlacement();
@@ -189,15 +222,22 @@ async function savePDF() {
 
   await editor.applyFormData(viewer.getFormData());
   await editor.applySignatures(viewer.getSignaturePlacements());
+  editor.applyFreeText(viewer.getFreeTextAnnotations());
 
   const bytes    = await editor.getBytes();
   const blob     = new Blob([bytes], { type: 'application/pdf' });
-  const url      = URL.createObjectURL(blob);
   const origName = document.getElementById('file-name').textContent.replace(/\.pdf$/i, '');
-  const a        = Object.assign(document.createElement('a'), { href: url, download: `${origName}_signed.pdf` });
-  a.click();
-  URL.revokeObjectURL(url);
+  triggerDownload(URL.createObjectURL(blob), `${origName}_signed.pdf`);
   toast('PDF downloaded');
+}
+
+// ── Signature color ──────────────────────────────────────────────────────────
+
+function setColor(hex) {
+  sigPad.color = hex;
+  document.querySelectorAll('.color-swatch').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.color === hex);
+  });
 }
 
 // ── Signature import / export ────────────────────────────────────────────────
@@ -238,9 +278,7 @@ async function exportSignatures() {
   const sigs = await getSignatures();
   if (!sigs.length) { toast('No signatures to export'); return; }
   const blob = new Blob([JSON.stringify({ signatures: sigs }, null, 2)], { type: 'application/json' });
-  const url  = URL.createObjectURL(blob);
-  Object.assign(document.createElement('a'), { href: url, download: 'signatures.json' }).click();
-  URL.revokeObjectURL(url);
+  triggerDownload(URL.createObjectURL(blob), 'signatures.json');
   toast(`Exported ${sigs.length} signature${sigs.length > 1 ? 's' : ''}`);
 }
 
@@ -266,6 +304,19 @@ function normaliseImageToPng(dataUrl) {
     img.onerror = reject;
     img.src = dataUrl;
   });
+}
+
+// ── Download helper (works on Android Chrome) ────────────────────────────────
+
+function triggerDownload(url, filename) {
+  const a = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  // Small delay before cleanup so the browser has time to start the download
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
 // ── Toast ────────────────────────────────────────────────────────────────────
