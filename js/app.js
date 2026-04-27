@@ -35,8 +35,12 @@ function init() {
   document.querySelector('.modal-backdrop').onclick  = closeSigModal;
 
   document.getElementById('sig-export').onclick      = exportSignatures;
-  document.getElementById('sig-png-input').onchange  = onImportPng;
-  document.getElementById('sig-json-input').onchange = onImportJson;
+  // Use both change and input — Android Chrome sometimes fires only one
+  for (const id of ['sig-png-input', 'sig-json-input']) {
+    const el = document.getElementById(id);
+    el.addEventListener('change', id === 'sig-png-input' ? onImportPng : onImportJson);
+    el.addEventListener('input',  id === 'sig-png-input' ? onImportPng : onImportJson);
+  }
 
   const colorPicker = document.getElementById('sig-color');
   colorPicker.oninput = () => setColor(colorPicker.value);
@@ -244,23 +248,23 @@ function setColor(hex) {
 
 async function onImportPng(e) {
   const files = Array.from(e.target.files);
-  e.target.value = '';
+  if (!files.length) return;
   for (const file of files) {
     const dataUrl = await readFileAsDataUrl(file);
-    // Normalise to PNG with transparent background via an offscreen canvas
     const png = await normaliseImageToPng(dataUrl);
     await saveSignature(png);
   }
+  e.target.value = '';  // clear only after reading
   await renderSavedSigs();
   toast(`${files.length} image${files.length > 1 ? 's' : ''} imported`);
 }
 
 async function onImportJson(e) {
   const file = e.target.files[0];
-  e.target.value = '';
   if (!file) return;
   try {
-    const text = await file.text();
+    const text = await readFileAsText(file);  // FileReader, not file.text()
+    e.target.value = '';                       // clear only after reading
     const data = JSON.parse(text);
     const sigs  = Array.isArray(data) ? data : data.signatures;
     if (!Array.isArray(sigs)) throw new Error('Unrecognised format');
@@ -280,6 +284,15 @@ async function exportSignatures() {
   const blob = new Blob([JSON.stringify({ signatures: sigs }, null, 2)], { type: 'application/json' });
   triggerDownload(URL.createObjectURL(blob), 'signatures.json');
   toast(`Exported ${sigs.length} signature${sigs.length > 1 ? 's' : ''}`);
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsText(file);
+  });
 }
 
 function readFileAsDataUrl(file) {
