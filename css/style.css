@@ -298,6 +298,7 @@ textarea.form-field-overlay { resize: none; }
 
 .modal-content {
   position: relative;
+  z-index: 1;
   background: var(--surface);
   border-radius: 16px 16px 0 0;
   padding: 20px 20px 32px;
@@ -399,14 +400,9 @@ textarea.form-field-overlay { resize: none; }
 .color-swatch:hover  { transform: scale(1.15); }
 .color-swatch.active { border-color: var(--primary); }
 
-/* ── File input (offscreen, label triggers it reliably on Android) ── */
+/* ── File input hidden — display:none works with <label for> on all platforms ── */
 .file-input-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
+  display: none;
 }
 
 /* Labels styled as buttons */
