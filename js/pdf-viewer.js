@@ -174,28 +174,24 @@ export class PDFViewer {
     };
 
     el.addEventListener('mousedown', e => {
-      if (e.target.tagName === 'IMG') {
-        e.preventDefault();
-        start(e.clientX, e.clientY);
-        const mm = ev => move(ev.clientX, ev.clientY);
-        const mu = () => { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); };
-        document.addEventListener('mousemove', mm);
-        document.addEventListener('mouseup', mu);
-      }
+      if (e.target.closest('button, .sig-resize-handle')) return;
+      e.preventDefault();
+      start(e.clientX, e.clientY);
+      const mm = ev => move(ev.clientX, ev.clientY);
+      const mu = () => { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); };
+      document.addEventListener('mousemove', mm);
+      document.addEventListener('mouseup', mu);
     });
 
     el.addEventListener('touchstart', e => {
-      if (e.target.tagName === 'IMG') {
-        e.preventDefault();
-        const t = e.touches[0];
-        start(t.clientX, t.clientY);
-      }
+      if (e.target.closest('button, .sig-resize-handle')) return;
+      e.preventDefault();
+      start(e.touches[0].clientX, e.touches[0].clientY);
     }, { passive: false });
 
     el.addEventListener('touchmove', e => {
       e.preventDefault();
-      const t = e.touches[0];
-      move(t.clientX, t.clientY);
+      move(e.touches[0].clientX, e.touches[0].clientY);
     }, { passive: false });
   }
 

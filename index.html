@@ -69,6 +69,15 @@
         <button id="sig-save" class="btn-primary">Save Signature</button>
       </div>
 
+      <div class="sig-import-row">
+        <span class="label" style="margin-bottom:0;align-self:center">Or import</span>
+        <button id="sig-import-png" class="btn-secondary">PNG / JPG</button>
+        <button id="sig-import-json" class="btn-secondary">JSON backup</button>
+        <button id="sig-export" class="btn-secondary" style="margin-left:auto">Export all</button>
+      </div>
+      <input type="file" id="sig-png-input"  accept="image/png,image/jpeg,image/webp" hidden>
+      <input type="file" id="sig-json-input" accept=".json" hidden>
+
       <div class="saved-sigs-section">
         <p class="label">Saved signatures — tap to select</p>
         <div id="saved-sigs" class="saved-sigs"></div>

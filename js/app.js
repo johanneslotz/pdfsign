@@ -26,6 +26,12 @@ function init() {
   document.getElementById('sig-save').onclick        = onSaveSig;
   document.querySelector('.modal-backdrop').onclick  = closeSigModal;
 
+  document.getElementById('sig-import-png').onclick  = () => document.getElementById('sig-png-input').click();
+  document.getElementById('sig-import-json').onclick = () => document.getElementById('sig-json-input').click();
+  document.getElementById('sig-export').onclick      = exportSignatures;
+  document.getElementById('sig-png-input').onchange  = onImportPng;
+  document.getElementById('sig-json-input').onchange = onImportJson;
+
   viewer.onPlaceSignature = onSignaturePlaced;
 
   setupDropZone();
@@ -177,13 +183,82 @@ async function savePDF() {
   await editor.applyFormData(viewer.getFormData());
   await editor.applySignatures(viewer.getSignaturePlacements());
 
-  const bytes = await editor.getBytes();
-  const blob  = new Blob([bytes], { type: 'application/pdf' });
-  const url   = URL.createObjectURL(blob);
-  const a     = Object.assign(document.createElement('a'), { href: url, download: 'signed.pdf' });
+  const bytes    = await editor.getBytes();
+  const blob     = new Blob([bytes], { type: 'application/pdf' });
+  const url      = URL.createObjectURL(blob);
+  const origName = document.getElementById('file-name').textContent.replace(/\.pdf$/i, '');
+  const a        = Object.assign(document.createElement('a'), { href: url, download: `${origName}_signed.pdf` });
   a.click();
   URL.revokeObjectURL(url);
   toast('PDF downloaded');
+}
+
+// ── Signature import / export ────────────────────────────────────────────────
+
+async function onImportPng(e) {
+  const files = Array.from(e.target.files);
+  e.target.value = '';
+  for (const file of files) {
+    const dataUrl = await readFileAsDataUrl(file);
+    // Normalise to PNG with transparent background via an offscreen canvas
+    const png = await normaliseImageToPng(dataUrl);
+    await saveSignature(png);
+  }
+  await renderSavedSigs();
+  toast(`${files.length} image${files.length > 1 ? 's' : ''} imported`);
+}
+
+async function onImportJson(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const sigs  = Array.isArray(data) ? data : data.signatures;
+    if (!Array.isArray(sigs)) throw new Error('Unrecognised format');
+    for (const s of sigs) {
+      if (s.dataUrl) await saveSignature(s.dataUrl);
+    }
+    await renderSavedSigs();
+    toast(`${sigs.length} signature${sigs.length > 1 ? 's' : ''} imported`);
+  } catch (err) {
+    toast('Import failed: ' + err.message);
+  }
+}
+
+async function exportSignatures() {
+  const sigs = await getSignatures();
+  if (!sigs.length) { toast('No signatures to export'); return; }
+  const blob = new Blob([JSON.stringify({ signatures: sigs }, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  Object.assign(document.createElement('a'), { href: url, download: 'signatures.json' }).click();
+  URL.revokeObjectURL(url);
+  toast(`Exported ${sigs.length} signature${sigs.length > 1 ? 's' : ''}`);
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function normaliseImageToPng(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width  = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
 }
 
 // ── Toast ────────────────────────────────────────────────────────────────────
