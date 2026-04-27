@@ -12,18 +12,30 @@ export class PDFViewer {
   async load(arrayBuffer) {
     this.container.innerHTML = '';
     this.pages = [];
+    console.log('[pdfsign] PDF.js: loading document…');
     this.pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    console.log(`[pdfsign] PDF.js: ${this.pdfDoc.numPages} page(s) found`);
     for (let i = 1; i <= this.pdfDoc.numPages; i++) {
-      await this._renderPage(i);
+      try {
+        await this._renderPage(i);
+      } catch (err) {
+        console.error(`[pdfsign] Page ${i} render failed:`, err);
+        const wrapper = document.createElement('div');
+        wrapper.className = 'page-wrapper page-render-error';
+        wrapper.textContent = `Page ${i} failed to render: ${err.message}`;
+        this.container.appendChild(wrapper);
+      }
     }
   }
 
   async _renderPage(num) {
+    console.log(`[pdfsign] Rendering page ${num}…`);
     const pdfPage = await this.pdfDoc.getPage(num);
     const containerWidth = Math.min(this.container.clientWidth - 32, 1000) || 800;
     const naturalVP = pdfPage.getViewport({ scale: 1 });
     const scale = containerWidth / naturalVP.width;
     const viewport = pdfPage.getViewport({ scale });
+    console.log(`[pdfsign] Page ${num}: ${Math.round(naturalVP.width)}×${Math.round(naturalVP.height)}pt → scale ${scale.toFixed(2)} → ${Math.round(viewport.width)}×${Math.round(viewport.height)}px`);
 
     const wrapper = document.createElement('div');
     wrapper.className = 'page-wrapper';

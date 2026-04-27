@@ -34,6 +34,7 @@ function init() {
   document.querySelector('.modal-backdrop').onclick  = closeSigModal;
 
   document.getElementById('sig-export').onclick      = exportSignatures;
+  document.getElementById('error-banner-close').onclick = hideError;
   // Use both change and input — Android Chrome sometimes fires only one
   for (const id of ['sig-png-input', 'sig-json-input']) {
     const el = document.getElementById(id);
@@ -78,23 +79,64 @@ async function onFileSelected(e) {
 }
 
 async function loadFile(file) {
-  document.getElementById('file-name').textContent = file.name;
-  pdfBytes = await file.arrayBuffer();
+  console.log(`[pdfsign] Loading file: ${file.name} (${(file.size / 1024).toFixed(1)} KB, type: ${file.type || 'unknown'})`);
 
+  document.getElementById('file-name').textContent = file.name;
+  hideError();
+
+  let bytes;
+  try {
+    bytes = await file.arrayBuffer();
+    console.log(`[pdfsign] Read ${bytes.byteLength} bytes`);
+  } catch (err) {
+    return showError('Could not read file', err);
+  }
+
+  pdfBytes = bytes;
   document.getElementById('drop-zone').classList.add('hidden');
   document.getElementById('pdf-pages').classList.remove('hidden');
-
   toast('Loading…');
-  await viewer.load(pdfBytes.slice(0));
 
-  editor = new PDFEditor();
-  await editor.load(pdfBytes.slice(0));
+  try {
+    await viewer.load(pdfBytes.slice(0));
+  } catch (err) {
+    // Restore drop-zone so user can try another file
+    document.getElementById('drop-zone').classList.remove('hidden');
+    document.getElementById('pdf-pages').classList.add('hidden');
+    return showError(pdfErrorMessage(err), err);
+  }
+
+  try {
+    editor = new PDFEditor();
+    await editor.load(pdfBytes.slice(0));
+  } catch (err) {
+    // PDF rendered OK but pdf-lib can't load it (e.g. encrypted write-protection)
+    // Show a warning but still allow viewing and signature placement
+    console.warn('[pdfsign] pdf-lib failed to load (read-only mode):', err);
+    showError(`Editing limited: ${pdfErrorMessage(err)} — you can still view and place signatures.`, err, true);
+    editor = null;
+  }
 
   document.getElementById('btn-signature').disabled  = false;
   document.getElementById('btn-place-sig').disabled  = false;
   document.getElementById('btn-add-text').disabled   = false;
-  document.getElementById('btn-save').disabled       = false;
-  toast('PDF loaded');
+  document.getElementById('btn-save').disabled       = editor === null;
+  console.log(`[pdfsign] Loaded ${viewer.pages.length} page(s)`);
+  toast(`Loaded ${viewer.pages.length} page${viewer.pages.length === 1 ? '' : 's'}`);
+}
+
+function pdfErrorMessage(err) {
+  const name = err?.name || '';
+  const msg  = err?.message || String(err);
+  if (name === 'PasswordException' || msg.includes('password'))
+    return 'This PDF is password-protected.';
+  if (name === 'InvalidPDFException' || msg.includes('Invalid PDF'))
+    return 'File is not a valid PDF or is corrupted.';
+  if (name === 'UnexpectedResponseException')
+    return 'Unexpected server response loading the PDF.';
+  if (msg.includes('encrypted') || msg.includes('Encrypt'))
+    return 'This PDF uses unsupported encryption.';
+  return msg || 'Unknown error';
 }
 
 // ── Signature modal ──────────────────────────────────────────────────────────
@@ -329,6 +371,20 @@ function triggerDownload(url, filename) {
   a.click();
   // Small delay before cleanup so the browser has time to start the download
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+}
+
+// ── Error banner ─────────────────────────────────────────────────────────────
+
+function showError(msg, err, isWarning = false) {
+  console.error('[pdfsign]', msg, err);
+  const banner = document.getElementById('error-banner');
+  document.getElementById('error-banner-msg').textContent = msg;
+  banner.classList.remove('hidden', 'warning');
+  if (isWarning) banner.classList.add('warning');
+}
+
+function hideError() {
+  document.getElementById('error-banner').classList.add('hidden');
 }
 
 // ── Toast ────────────────────────────────────────────────────────────────────
