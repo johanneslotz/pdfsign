@@ -456,6 +456,7 @@ textarea.form-field-overlay { resize: none; }
   align-items: center;
   cursor: pointer;
   user-select: none;
+  border-radius: var(--radius);
 }
 
 /* ── Signature canvas ── */
