@@ -1,4 +1,4 @@
-const CACHE = 'pdfsign-v7';
+const CACHE = 'pdfsign-v8';
 const PRECACHE = [
   './',
   './index.html',
@@ -8,6 +8,10 @@ const PRECACHE = [
   './js/signature-pad.js',
   './js/pdf-viewer.js',
   './js/pdf-editor.js',
+  './js/form-memory.js',
+  './js/vision-api.js',
+  './js/settings.js',
+  './js/ai-assistant.js',
   './manifest.json',
   './icon.svg',
 ];
@@ -27,17 +31,29 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // CDN resources: network first, fall back to cache
+  // CDN resources (pdf.js, pdf-lib): cache-first — URLs are version-pinned
   if (e.request.url.includes('cdnjs') || e.request.url.includes('unpkg')) {
     e.respondWith(
-      fetch(e.request)
-        .then(r => { const c = r.clone(); caches.open(CACHE).then(cache => cache.put(e.request, c)); return r; })
-        .catch(() => caches.match(e.request))
+      caches.match(e.request).then(cached => {
+        if (cached) return cached;
+        return fetch(e.request).then(r => {
+          const copy = r.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copy));
+          return r;
+        });
+      })
     );
     return;
   }
-  // Local assets: cache first
+
+  // Local assets: network-first — always serve fresh when online, cache as offline fallback
   e.respondWith(
-    caches.match(e.request).then(r => r || fetch(e.request))
+    fetch(e.request)
+      .then(r => {
+        const copy = r.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+        return r;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
