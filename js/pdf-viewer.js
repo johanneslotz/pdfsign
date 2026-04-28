@@ -347,4 +347,65 @@ export class PDFViewer {
     this.placementMode = false;
     this.container.style.cursor = '';
   }
+
+  // ── AI assistant helpers ─────────────────────────────────────────────────────
+
+  getPageImageDataUrl(pageNum, quality = 0.85) {
+    const info = this.pages.find(p => p.num === pageNum);
+    return info ? info.canvas.toDataURL('image/jpeg', quality) : null;
+  }
+
+  async getPageTextContent(pageNum) {
+    const info = this.pages.find(p => p.num === pageNum);
+    if (!info) return { items: [], text: '' };
+    const content = await info.pdfPage.getTextContent();
+    const text    = content.items.map(i => i.str).join(' ');
+    return { items: content.items, text };
+  }
+
+  // Places a new editable overlay at a position given as page percentages (0–100).
+  addDetectedFieldOverlay(pageNum, label, canonicalKey, fieldType, topPct, leftPct) {
+    const info = this.pages.find(p => p.num === pageNum);
+    if (!info) return null;
+
+    const canvasX = (leftPct / 100) * info.canvas.width;
+    const canvasY = (topPct  / 100) * info.canvas.height;
+
+    let el;
+    if (fieldType === 'checkbox') {
+      el      = document.createElement('input');
+      el.type = 'checkbox';
+    } else if (fieldType === 'textarea') {
+      el = document.createElement('textarea');
+    } else {
+      el      = document.createElement('input');
+      el.type = fieldType === 'date'   ? 'date'
+              : fieldType === 'number' ? 'number'
+              : fieldType === 'email'  ? 'email'
+              : (fieldType === 'phone' || fieldType === 'tel') ? 'tel'
+              : 'text';
+    }
+
+    const isCheckbox = fieldType === 'checkbox';
+    const width  = isCheckbox ? 20 : Math.round(Math.min(240, info.canvas.width * 0.28));
+    const height = fieldType === 'textarea' ? 56 : isCheckbox ? 20 : 24;
+
+    el.className = 'form-field-overlay detected-field-overlay';
+    el.dataset.fieldName = canonicalKey;
+    el.dataset.fieldType = fieldType;
+    el.dataset.pageNum   = pageNum;
+    el.title = label;
+    if (!isCheckbox) el.placeholder = label;
+
+    Object.assign(el.style, {
+      position: 'absolute',
+      left:     canvasX + 'px',
+      top:      canvasY + 'px',
+      width:    width  + 'px',
+      height:   height + 'px',
+    });
+
+    info.wrapper.appendChild(el);
+    return el;
+  }
 }

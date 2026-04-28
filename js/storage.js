@@ -1,12 +1,20 @@
 const DB_NAME = 'pdfsign';
-const DB_VERSION = 1;
-const STORE = 'signatures';
+const DB_VERSION = 2;
 
-function openDB() {
+export function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = e => {
-      e.target.result.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('signatures')) {
+        db.createObjectStore('signatures', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('userProfile')) {
+        db.createObjectStore('userProfile', { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains('formHistory')) {
+        db.createObjectStore('formHistory', { keyPath: 'key' });
+      }
     };
     req.onsuccess = e => resolve(e.target.result);
     req.onerror = e => reject(e.target.error);
