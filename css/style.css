@@ -454,9 +454,15 @@ textarea.form-field-overlay { resize: none; }
 .btn-label {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
   cursor: pointer;
   user-select: none;
   border-radius: var(--radius);
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.12s, opacity 0.12s;
+  white-space: nowrap;
 }
 
 /* ── Signature canvas ── */
@@ -561,6 +567,6 @@ textarea.form-field-overlay { resize: none; }
 @media (max-width: 480px) {
   .toolbar { padding: 6px 8px; }
   .toolbar-right { gap: 4px; }
-  button { padding: 6px 10px; font-size: 12px; }
+  button, .btn-label { padding: 6px 10px; font-size: 12px; }
   .pdf-pages { padding: 12px 8px; gap: 12px; }
 }
