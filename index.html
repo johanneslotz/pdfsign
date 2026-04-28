@@ -28,6 +28,13 @@
     <span id="file-name" class="file-name">No file open</span>
 
     <div class="toolbar-right">
+      <button id="btn-ai" class="btn-secondary" disabled title="AI Form Assistant">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4 4 4 0 0 1-4 4 4 4 0 0 1-4-4 4 4 0 0 1 4-4"/><path d="M12 14c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4"/><circle cx="18" cy="8" r="2"/><path d="M18 6v4M16 8h4"/></svg>
+        AI Fill
+      </button>
+      <button id="btn-settings" class="btn-secondary" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
       <button id="btn-signature" class="btn-secondary" disabled title="Manage signatures">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         Signature
@@ -55,6 +62,27 @@
     </div>
     <div id="pdf-pages" class="pdf-pages hidden"></div>
   </main>
+
+  <!-- AI Assistant panel -->
+  <div id="ai-panel" class="ai-panel hidden" role="complementary" aria-label="AI Form Assistant">
+    <div class="ai-panel-header">
+      <span class="ai-panel-title">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M12 14c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4"/><circle cx="18" cy="8" r="2"/><path d="M18 6v4M16 8h4"/></svg>
+        AI Form Assistant
+      </span>
+      <div class="ai-panel-header-actions">
+        <button id="ai-analyze" class="btn-sm btn-primary" disabled>Analyze</button>
+        <button id="ai-panel-close" class="btn-ghost" aria-label="Close panel">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="ai-status" class="ai-status">Open a PDF to start.</div>
+    <div id="ai-field-list" class="ai-field-list"></div>
+    <div id="ai-footer" class="ai-panel-footer hidden">
+      <button id="ai-fill-all" class="btn-primary ai-fill-all-btn">Fill All Suggestions</button>
+    </div>
+  </div>
 
   <!-- Signature modal -->
   <div id="sig-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Signature manager">
@@ -104,13 +132,47 @@
     </div>
   </div>
 
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Settings">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content settings-content">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button id="settings-close" class="btn-ghost" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="settings-section">
+        <h3 class="settings-section-title">AI Assistant</h3>
+        <div class="settings-field">
+          <label class="settings-label" for="setting-api-key">OpenRouter API Key</label>
+          <input type="password" id="setting-api-key" class="settings-input" placeholder="sk-or-v1-…" autocomplete="off">
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="setting-model">Vision Model</label>
+          <select id="setting-model" class="settings-input"></select>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3 class="settings-section-title">My Information</h3>
+        <p class="settings-hint">These values are suggested when the AI detects matching form fields.</p>
+        <div id="profile-fields" class="profile-fields"></div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="settings-save" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
   <script type="module" src="js/app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      // Auto-reload when a new SW takes control so stale JS/CSS is never served
       let refreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (!refreshing) { refreshing = true; window.location.reload(); }

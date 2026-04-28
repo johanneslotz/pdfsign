@@ -1,14 +1,19 @@
 import { saveSignature, getSignatures, deleteSignature } from './storage.js';
-import { SignaturePad } from './signature-pad.js';
-import { PDFViewer }    from './pdf-viewer.js';
-import { PDFEditor }    from './pdf-editor.js';
+import { SignaturePad }   from './signature-pad.js';
+import { PDFViewer }      from './pdf-viewer.js';
+import { PDFEditor }      from './pdf-editor.js';
+import { FormMemory }     from './form-memory.js';
+import { VisionAPI }      from './vision-api.js';
+import { AIAssistant }    from './ai-assistant.js';
+import { initSettingsModal, loadSettings } from './settings.js';
 
 let viewer   = null;
 let editor   = null;
 let sigPad   = null;
-let pdfBytes = null;       // original ArrayBuffer (kept for re-load into pdf-lib)
+let pdfBytes = null;
 let selectedSigDataUrl = null;
 let placementBanner    = null;
+let assistant          = null;
 
 // ── Init ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +21,21 @@ function init() {
   viewer = new PDFViewer(document.getElementById('pdf-pages'));
   sigPad = new SignaturePad(document.getElementById('sig-canvas'));
 
+  // ── AI assistant & settings ──────────────────────────────────────────────
+  const formMemory = new FormMemory();
+  const { apiKey, model } = loadSettings();
+  const visionApi  = new VisionAPI(apiKey, model);
+
+  assistant = new AIAssistant({ viewer, formMemory, visionApi, toast });
+
+  initSettingsModal(formMemory, ({ apiKey: key, model: mdl }) => {
+    assistant.visionApi = new VisionAPI(key, mdl);
+    toast('Settings saved');
+  });
+
+  document.getElementById('btn-ai').onclick = () => assistant.show();
+
+  // ── Standard toolbar ─────────────────────────────────────────────────────
   document.getElementById('file-input').addEventListener('change', onFileSelected);
   document.getElementById('btn-signature').onclick   = openSigModal;
   document.getElementById('btn-place-sig').onclick   = startPlacement;
@@ -27,15 +47,15 @@ function init() {
   const lwSlider = document.getElementById('sig-linewidth');
   const lwVal    = document.getElementById('sig-linewidth-val');
   lwSlider.oninput = () => {
-    sigPad.lineWidth   = parseFloat(lwSlider.value);
-    lwVal.textContent  = lwSlider.value + 'px';
+    sigPad.lineWidth  = parseFloat(lwSlider.value);
+    lwVal.textContent = lwSlider.value + 'px';
   };
-  document.getElementById('sig-save').onclick        = onSaveSig;
-  document.querySelector('.modal-backdrop').onclick  = closeSigModal;
+  document.getElementById('sig-save').onclick = onSaveSig;
+  document.querySelector('#sig-modal .modal-backdrop').onclick = closeSigModal;
 
-  document.getElementById('sig-export').onclick      = exportSignatures;
+  document.getElementById('sig-export').onclick         = exportSignatures;
   document.getElementById('error-banner-close').onclick = hideError;
-  // Use both change and input — Android Chrome sometimes fires only one
+
   for (const id of ['sig-png-input', 'sig-json-input']) {
     const el = document.getElementById(id);
     el.addEventListener('change', id === 'sig-png-input' ? onImportPng : onImportJson);
@@ -44,12 +64,9 @@ function init() {
 
   const colorPicker = document.getElementById('sig-color');
   colorPicker.oninput = () => setColor(colorPicker.value);
-
   document.querySelectorAll('.color-swatch').forEach(btn => {
     btn.onclick = () => { colorPicker.value = btn.dataset.color; setColor(btn.dataset.color); };
   });
-
-  // Mark first swatch active by default
   document.querySelector('.color-swatch').classList.add('active');
 
   viewer.onPlaceSignature = onSignaturePlaced;
@@ -63,7 +80,7 @@ function init() {
 function setupDropZone() {
   const zone = document.getElementById('drop-zone');
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
   zone.addEventListener('drop', e => {
     e.preventDefault();
     zone.classList.remove('drag-over');
@@ -100,7 +117,6 @@ async function loadFile(file) {
   try {
     await viewer.load(pdfBytes.slice(0));
   } catch (err) {
-    // Restore drop-zone so user can try another file
     document.getElementById('drop-zone').classList.remove('hidden');
     document.getElementById('pdf-pages').classList.add('hidden');
     return showError(pdfErrorMessage(err), err);
@@ -110,19 +126,22 @@ async function loadFile(file) {
     editor = new PDFEditor();
     await editor.load(pdfBytes.slice(0));
   } catch (err) {
-    // PDF rendered OK but pdf-lib can't load it (e.g. encrypted write-protection)
-    // Show a warning but still allow viewing and signature placement
     console.warn('[pdfsign] pdf-lib failed to load (read-only mode):', err);
     showError(`Editing limited: ${pdfErrorMessage(err)} — you can still view and place signatures.`, err, true);
     editor = null;
   }
 
-  document.getElementById('btn-signature').disabled  = false;
-  document.getElementById('btn-place-sig').disabled  = false;
-  document.getElementById('btn-add-text').disabled   = false;
-  document.getElementById('btn-save').disabled       = editor === null;
+  document.getElementById('btn-signature').disabled = false;
+  document.getElementById('btn-place-sig').disabled = false;
+  document.getElementById('btn-add-text').disabled  = false;
+  document.getElementById('btn-save').disabled      = editor === null;
+  document.getElementById('btn-ai').disabled        = false;
+
   console.log(`[pdfsign] Loaded ${viewer.pages.length} page(s)`);
   toast(`Loaded ${viewer.pages.length} page${viewer.pages.length === 1 ? '' : 's'}`);
+
+  // Notify AI assistant so it opens the panel and readies the Analyze button
+  assistant?.onPDFLoaded();
 }
 
 function pdfErrorMessage(err) {
@@ -261,7 +280,6 @@ async function savePDF() {
   if (!editor) return;
   toast('Saving…');
 
-  // Re-load editor from original bytes so previous saves don't stack
   editor = new PDFEditor();
   await editor.load(pdfBytes.slice(0));
 
@@ -292,10 +310,10 @@ async function onImportPng(e) {
   if (!files.length) return;
   for (const file of files) {
     const dataUrl = await readFileAsDataUrl(file);
-    const png = await normaliseImageToPng(dataUrl);
+    const png     = await normaliseImageToPng(dataUrl);
     await saveSignature(png);
   }
-  e.target.value = '';  // clear only after reading
+  e.target.value = '';
   await renderSavedSigs();
   toast(`${files.length} image${files.length > 1 ? 's' : ''} imported`);
 }
@@ -304,8 +322,8 @@ async function onImportJson(e) {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    const text = await readFileAsText(file);  // FileReader, not file.text()
-    e.target.value = '';                       // clear only after reading
+    const text = await readFileAsText(file);
+    e.target.value = '';
     const data = JSON.parse(text);
     const sigs  = Array.isArray(data) ? data : data.signatures;
     if (!Array.isArray(sigs)) throw new Error('Unrecognised format');
@@ -360,7 +378,7 @@ function normaliseImageToPng(dataUrl) {
   });
 }
 
-// ── Download helper (works on Android Chrome) ────────────────────────────────
+// ── Download helper ──────────────────────────────────────────────────────────
 
 function triggerDownload(url, filename) {
   const a = document.createElement('a');
@@ -369,7 +387,6 @@ function triggerDownload(url, filename) {
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
-  // Small delay before cleanup so the browser has time to start the download
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
 }
 
