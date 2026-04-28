@@ -46,9 +46,9 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Local assets: network-first — always serve fresh when online, cache as offline fallback
+  // Local assets: network-first, bypass HTTP cache so we never serve stale JS/CSS
   e.respondWith(
-    fetch(e.request)
+    fetch(new Request(e.request, { cache: 'reload' }))
       .then(r => {
         const copy = r.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));
