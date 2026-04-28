@@ -795,30 +795,10 @@ textarea.form-field-overlay { resize: none; }
   background: var(--surface);
 }
 
-/* ── Profile fields grid ── */
-.profile-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.profile-field-row {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.profile-field-row label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.profile-input {
-  height: 32px;
-  padding: 0 8px;
+/* ── User info textarea (settings) ── */
+.user-info-textarea {
+  width: 100%;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font-size: 13px;
@@ -826,9 +806,11 @@ textarea.form-field-overlay { resize: none; }
   color: var(--text);
   background: var(--bg);
   outline: none;
+  resize: vertical;
+  line-height: 1.5;
 }
 
-.profile-input:focus {
+.user-info-textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(37,99,235,0.2);
   background: var(--surface);

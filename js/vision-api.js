@@ -1,35 +1,50 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-const FORM_ANALYSIS_PROMPT = `Analyze this PDF page image. Identify every form field that requires user input.
+function buildPrompt(extractedText, userInfo) {
+  const parts = [];
 
-Return ONLY valid JSON in this exact format — no markdown, no code fences:
+  if (userInfo?.trim()) {
+    parts.push(
+      `USER INFORMATION (use this to suggest fill values):\n"""\n${userInfo.substring(0, 4000)}\n"""\n`
+    );
+  }
+
+  if (extractedText?.trim()) {
+    parts.push(
+      `Embedded PDF text (may be incomplete for scanned pages):\n"""\n${extractedText.substring(0, 3000)}\n"""\n`
+    );
+  }
+
+  parts.push(`Analyze this PDF page image. Identify every form field that requires user input.
+Return ONLY valid JSON — no markdown, no code fences:
 {
   "isForm": true,
   "fields": [
     {
-      "label": "the label text exactly as shown on the form",
+      "label": "label text exactly as shown",
       "canonicalKey": "snake_case_identifier",
       "type": "text|date|email|phone|number|checkbox|signature|textarea|select",
       "inputPosition": { "top": 25.0, "left": 60.0 },
+      "suggestedValue": "value derived from USER INFORMATION above, or empty string",
       "required": false
     }
   ]
 }
 
 Rules:
-- inputPosition: percentage (0–100) from page top and left for WHERE the user should enter the value
+- inputPosition: percentage (0–100) from page top/left for WHERE the user enters the value
 - canonicalKey examples: first_name, last_name, date_of_birth, email, phone, address, city, zip, country, company, iban, tax_id, signature
-- Only include fields with blank areas, underlines, boxes, or checkboxes for user input — skip pre-filled content
-- For signature fields use type "signature"
-- If not a form, return {"isForm": false, "fields": []}`;
+- Only include blank fields for user input — skip pre-filled text
+- For signature fields use type "signature" and leave suggestedValue empty
+- If not a form, return {"isForm": false, "fields": []}`);
+
+  return parts.join('\n');
+}
 
 function extractJSON(text) {
-  // Try direct parse first
   try { return JSON.parse(text); } catch {}
-  // Strip possible ```json ... ``` wrapper
   const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (match) try { return JSON.parse(match[1].trim()); } catch {}
-  // Find first { ... } block
   const start = text.indexOf('{');
   const end   = text.lastIndexOf('}');
   if (start !== -1 && end > start) try { return JSON.parse(text.slice(start, end + 1)); } catch {}
@@ -42,11 +57,7 @@ export class VisionAPI {
     this.model  = model;
   }
 
-  async analyzeFormPage(imageDataUrl, extractedText = '') {
-    const textCtx = extractedText.trim()
-      ? `Embedded text (may be incomplete for scanned pages):\n"""\n${extractedText.substring(0, 3000)}\n"""\n\n`
-      : '';
-
+  async analyzeFormPage(imageDataUrl, extractedText = '', userInfo = '') {
     const response = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -61,7 +72,7 @@ export class VisionAPI {
           role: 'user',
           content: [
             { type: 'image_url', image_url: { url: imageDataUrl } },
-            { type: 'text', text: textCtx + FORM_ANALYSIS_PROMPT },
+            { type: 'text', text: buildPrompt(extractedText, userInfo) },
           ],
         }],
         max_tokens:  2000,

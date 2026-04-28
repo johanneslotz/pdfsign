@@ -49,7 +49,8 @@ export class AIAssistant {
       try {
         const imageDataUrl = this.viewer.getPageImageDataUrl(pageNum);
         const { text }     = await this.viewer.getPageTextContent(pageNum);
-        const result       = await this.visionApi.analyzeFormPage(imageDataUrl, text);
+        const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
+        const result       = await this.visionApi.analyzeFormPage(imageDataUrl, text, userInfo);
 
         if (!result.isForm || !result.fields?.length) continue;
 
@@ -65,7 +66,16 @@ export class AIAssistant {
             );
           }
 
-          const suggestions = await this.formMemory.getSuggestions(vf.canonicalKey);
+          // AI-suggested value (from user info) takes top priority; history fills the rest
+          const historyHints = await this.formMemory.getSuggestions(vf.canonicalKey);
+          const suggestions  = [];
+          if (vf.suggestedValue) {
+            suggestions.push({ value: vf.suggestedValue, source: 'ai', score: 100 });
+          }
+          for (const h of historyHints) {
+            if (!suggestions.some(s => s.value === h.value)) suggestions.push(h);
+          }
+
           this.fields.push({
             pageNum,
             label:        vf.label,
@@ -159,10 +169,10 @@ export class AIAssistant {
     labelEl.textContent = field.label + (field.required ? ' *' : '');
     labelRow.appendChild(labelEl);
 
-    if (field.suggestions[0]?.source === 'profile') {
+    if (field.suggestions[0]?.source === 'ai') {
       const badge = document.createElement('span');
       badge.className = 'ai-badge profile';
-      badge.textContent = '★ profile';
+      badge.textContent = '★ from your info';
       labelRow.appendChild(badge);
     } else if (field.suggestions[0]?.source === 'history') {
       const badge = document.createElement('span');
