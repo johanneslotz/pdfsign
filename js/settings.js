@@ -4,12 +4,13 @@ const LS_API_KEY = 'pdfsign_openrouter_key';
 const LS_MODEL   = 'pdfsign_openrouter_model';
 
 export const MODELS = [
+  { id: 'google/gemini-2.5-pro',           label: 'Gemini 2.5 Pro ★ best vision' },
   { id: 'google/gemini-2.0-flash-001',     label: 'Gemini 2.0 Flash (recommended)' },
+  { id: 'anthropic/claude-opus-4-5',       label: 'Claude Opus 4.5' },
+  { id: 'anthropic/claude-sonnet-4-5',     label: 'Claude Sonnet 4.5' },
   { id: 'anthropic/claude-3.5-haiku',      label: 'Claude 3.5 Haiku' },
-  { id: 'openai/gpt-4o-mini',              label: 'GPT-4o mini' },
-  { id: 'anthropic/claude-3.5-sonnet',     label: 'Claude 3.5 Sonnet' },
   { id: 'openai/gpt-4o',                   label: 'GPT-4o' },
-  { id: 'google/gemini-2.0-pro-exp-02-05', label: 'Gemini 2.0 Pro' },
+  { id: 'openai/gpt-4o-mini',              label: 'GPT-4o mini' },
 ];
 
 export function loadSettings() {
