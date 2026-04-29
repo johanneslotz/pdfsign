@@ -42,12 +42,25 @@ Rules:
 }
 
 function extractJSON(text) {
+  // 1. Raw JSON
   try { return JSON.parse(text); } catch {}
-  const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (match) try { return JSON.parse(match[1].trim()); } catch {}
+  // 2. Inside markdown code fences (may be missing closing fence if truncated)
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/);
+  if (fenceMatch) try { return JSON.parse(fenceMatch[1].trim()); } catch {}
+  // 3. Slice from first { to last } (handles leading/trailing prose)
   const start = text.indexOf('{');
   const end   = text.lastIndexOf('}');
   if (start !== -1 && end > start) try { return JSON.parse(text.slice(start, end + 1)); } catch {}
+  // 4. Response was truncated — try to close the JSON by counting unclosed brackets
+  if (start !== -1) {
+    let partial = text.slice(start);
+    // Drop any incomplete trailing object (last unclosed {)
+    const lastComplete = partial.lastIndexOf('},');
+    if (lastComplete !== -1) partial = partial.slice(0, lastComplete + 1);
+    // Close the fields array and root object
+    try { return JSON.parse(partial + ']}'); } catch {}
+    try { return JSON.parse(partial + ']\n}'); } catch {}
+  }
   throw new Error('No valid JSON in model response');
 }
 
@@ -108,7 +121,7 @@ export class VisionAPI {
             { type: 'text', text: prompt },
           ],
         }],
-        max_tokens:  2000,
+        max_tokens:  4000,
         temperature: 0.1,
         stream:      true,
       }),
