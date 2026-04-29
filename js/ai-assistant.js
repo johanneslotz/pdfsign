@@ -57,7 +57,7 @@ export class AIAssistant {
         const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
         const result       = await this.visionApi.analyzeFormPage(imageDataUrl, text, userInfo);
 
-        this._log.push({ pageNum, prompt: result._prompt, response: result._raw });
+        this._log.push({ pageNum, imageDataUrl, prompt: result._prompt, response: result._raw });
 
         if (!result.isForm || !result.fields?.length) continue;
 
@@ -96,7 +96,7 @@ export class AIAssistant {
         }
       } catch (err) {
         console.error(`[ai-assistant] Page ${pageNum}:`, err);
-        this._log.push({ pageNum, prompt: null, response: `Error: ${err.message}` });
+        this._log.push({ pageNum, imageDataUrl, prompt: null, response: `Error: ${err.message}` });
         this._setStatus(`Page ${pageNum} error: ${err.message}`);
         await new Promise(r => setTimeout(r, 1500));
       }
@@ -278,8 +278,21 @@ export class AIAssistant {
       const section = document.createElement('div');
       section.className = 'ai-conv-section';
 
+      if (entry.imageDataUrl) {
+        const thumb = document.createElement('div');
+        thumb.className = 'ai-conv-thumb';
+        const img = document.createElement('img');
+        img.src = entry.imageDataUrl;
+        img.alt = `Page ${entry.pageNum} sent to model`;
+        thumb.appendChild(img);
+        const cap = document.createElement('span');
+        cap.textContent = `Page ${entry.pageNum} image sent to model`;
+        thumb.appendChild(cap);
+        section.appendChild(thumb);
+      }
+
       if (entry.prompt) {
-        section.appendChild(this._convBlock('user', pageLabel + ' — sent', entry.prompt));
+        section.appendChild(this._convBlock('user', pageLabel + ' — text prompt', entry.prompt));
       }
       if (entry.response) {
         const isError = entry.response.startsWith('Error:');
