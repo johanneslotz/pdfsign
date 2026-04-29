@@ -183,12 +183,44 @@ export class AIAssistant {
       const pageContexts = await this._getPageContexts();
       const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
       const textEl       = thinkingBubble.querySelector('.ai-chat-bubble-text');
-      const reply        = await this.visionApi.chat(
+
+      const reply = await this.visionApi.chat(
         this._chatHistory, pageContexts, userInfo,
-        (_delta, full) => { textEl.textContent = full; thinkingBubble.scrollIntoView({ block: 'end' }); }
+        (_delta, full) => {
+          // Hide the <field_updates> XML block from the live display
+          const xmlStart = full.indexOf('<field_updates>');
+          textEl.textContent = xmlStart >= 0 ? full.substring(0, xmlStart).trimEnd() : full;
+          thinkingBubble.scrollIntoView({ block: 'end' });
+        },
+        this.fields,
       );
+
+      // Keep full reply in history so the model knows what it did
       this._chatHistory.push({ role: 'assistant', content: reply });
-      textEl.textContent = reply;
+
+      // Apply any field updates the model included
+      const updatesMatch = reply.match(/<field_updates>([\s\S]*?)<\/field_updates>/);
+      let appliedCount = 0;
+      if (updatesMatch) {
+        try {
+          const updates = JSON.parse(updatesMatch[1].trim());
+          for (const upd of updates) {
+            const field = this.fields.find(f => f.canonicalKey === upd.canonicalKey);
+            if (field) {
+              if (field._panelInput) field._panelInput.value = upd.value;
+              if (field.overlayEl)  this._applyToOverlay(field, upd.value, false);
+              appliedCount++;
+            }
+          }
+        } catch {}
+      }
+
+      // Show clean reply text + optional update summary
+      const cleanReply = reply.replace(/<field_updates>[\s\S]*?<\/field_updates>/, '').trimEnd();
+      textEl.textContent = appliedCount
+        ? `${cleanReply}\n\n✓ Updated ${appliedCount} field${appliedCount !== 1 ? 's' : ''}`
+        : cleanReply;
+
     } catch (err) {
       thinkingBubble.classList.add('ai-chat-bubble-error');
       thinkingBubble.querySelector('.ai-chat-bubble-text').textContent = `Error: ${err.message}`;

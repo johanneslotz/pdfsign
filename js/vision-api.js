@@ -134,7 +134,7 @@ export class VisionAPI {
     }
   }
 
-  async chat(history, pageContexts = [], userInfo = '', onToken = null) {
+  async chat(history, pageContexts = [], userInfo = '', onToken = null, fields = []) {
     if (!history.length) throw new Error('No messages');
 
     const messages = [];
@@ -156,6 +156,18 @@ export class VisionAPI {
       .join('\n\n');
     if (pageTexts) {
       preamble += `PDF text content:\n"""\n${pageTexts}\n"""\n\n`;
+    }
+    if (fields.length) {
+      const fieldSnapshot = fields.map(f => ({
+        canonicalKey:  f.canonicalKey,
+        label:         f.label,
+        currentValue:  f._panelInput?.value || '',
+      }));
+      preamble +=
+        `Detected form fields (with current values):\n${JSON.stringify(fieldSnapshot, null, 2)}\n\n` +
+        `If the user asks to change or fill any fields, append this block at the END of your response ` +
+        `(after your plain-text answer) and nothing else after it:\n` +
+        `<field_updates>[{"canonicalKey":"...","value":"..."}]</field_updates>\n\n`;
     }
 
     firstContent.push({ type: 'text', text: preamble + firstUserText });
