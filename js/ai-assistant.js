@@ -12,6 +12,7 @@ export class AIAssistant {
     this._footer     = document.getElementById('ai-footer');
     this._analyzeBtn = document.getElementById('ai-analyze');
     this._fillAllBtn = document.getElementById('ai-fill-all');
+    this._log        = [];  // [{pageNum, prompt, response}]
 
     document.getElementById('ai-panel-close').onclick = () => this.hide();
     this._analyzeBtn.onclick = () => this.analyze();
@@ -23,8 +24,10 @@ export class AIAssistant {
 
   onPDFLoaded() {
     this.fields = [];
+    this._log   = [];
     this._fieldList.innerHTML = '';
     this._footer.classList.add('hidden');
+    this._removeConvEl();
     this._setStatus('Click Analyze to detect form fields.');
     this._analyzeBtn.disabled = false;
     this.show();
@@ -38,8 +41,10 @@ export class AIAssistant {
 
     this._analyzeBtn.disabled = true;
     this.fields = [];
+    this._log   = [];
     this._fieldList.innerHTML = '';
     this._footer.classList.add('hidden');
+    this._removeConvEl();
 
     const pages = this.viewer.pages;
 
@@ -51,6 +56,8 @@ export class AIAssistant {
         const { text }     = await this.viewer.getPageTextContent(pageNum);
         const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
         const result       = await this.visionApi.analyzeFormPage(imageDataUrl, text, userInfo);
+
+        this._log.push({ pageNum, prompt: result._prompt, response: result._raw });
 
         if (!result.isForm || !result.fields?.length) continue;
 
@@ -89,12 +96,14 @@ export class AIAssistant {
         }
       } catch (err) {
         console.error(`[ai-assistant] Page ${pageNum}:`, err);
+        this._log.push({ pageNum, prompt: null, response: `Error: ${err.message}` });
         this._setStatus(`Page ${pageNum} error: ${err.message}`);
         await new Promise(r => setTimeout(r, 1500));
       }
     }
 
     this._renderFieldList();
+    this._renderConversation();
     const n = this.fields.length;
     this._setStatus(n ? `${n} field${n !== 1 ? 's' : ''} detected.` : 'No form fields detected.');
     if (n) this._footer.classList.remove('hidden');
@@ -242,5 +251,66 @@ export class AIAssistant {
 
   _setStatus(msg) {
     this._statusEl.textContent = msg;
+  }
+
+  // ── Conversation log ─────────────────────────────────────────────────────────
+
+  _removeConvEl() {
+    document.getElementById('ai-conversation')?.remove();
+  }
+
+  _renderConversation() {
+    this._removeConvEl();
+    if (!this._log.length) return;
+
+    const details = document.createElement('details');
+    details.id        = 'ai-conversation';
+    details.className = 'ai-conversation';
+
+    const summary = document.createElement('summary');
+    summary.className   = 'ai-conversation-summary';
+    summary.textContent = `Conversation (${this._log.length} page${this._log.length !== 1 ? 's' : ''})`;
+    details.appendChild(summary);
+
+    for (const entry of this._log) {
+      const pageLabel = this.viewer.pages.length > 1 ? `Page ${entry.pageNum}` : 'Prompt & response';
+
+      const section = document.createElement('div');
+      section.className = 'ai-conv-section';
+
+      if (entry.prompt) {
+        section.appendChild(this._convBlock('user', pageLabel + ' — sent', entry.prompt));
+      }
+      if (entry.response) {
+        const isError = entry.response.startsWith('Error:');
+        let display = entry.response;
+        try {
+          display = JSON.stringify(JSON.parse(entry.response), null, 2);
+        } catch {}
+        section.appendChild(this._convBlock(isError ? 'error' : 'assistant', 'Model response', display));
+      }
+
+      details.appendChild(section);
+    }
+
+    // Insert before the field list
+    this._fieldList.parentNode.insertBefore(details, this._fieldList);
+  }
+
+  _convBlock(role, label, text) {
+    const wrap = document.createElement('div');
+    wrap.className = `ai-conv-block ai-conv-${role}`;
+
+    const lbl = document.createElement('div');
+    lbl.className   = 'ai-conv-label';
+    lbl.textContent = label;
+
+    const pre = document.createElement('pre');
+    pre.className   = 'ai-conv-pre';
+    pre.textContent = text;
+
+    wrap.appendChild(lbl);
+    wrap.appendChild(pre);
+    return wrap;
   }
 }

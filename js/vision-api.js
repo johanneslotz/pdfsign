@@ -89,6 +89,9 @@ export class VisionAPI {
     const content = data.choices?.[0]?.message?.content;
     if (!content) throw new Error('Empty response from vision model');
 
-    return extractJSON(content);
+    const result = extractJSON(content);
+    result._prompt = buildPrompt(extractedText, userInfo);
+    result._raw    = content;
+    return result;
   }
 }

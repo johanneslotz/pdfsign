@@ -795,6 +795,84 @@ textarea.form-field-overlay { resize: none; }
   background: var(--surface);
 }
 
+/* ── AI Conversation log ── */
+.ai-conversation {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ai-conversation-summary {
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-conversation-summary::-webkit-details-marker { display: none; }
+
+.ai-conversation-summary::before {
+  content: '▶';
+  font-size: 9px;
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+
+.ai-conversation[open] .ai-conversation-summary::before {
+  transform: rotate(90deg);
+}
+
+.ai-conversation-summary:hover { color: var(--text); }
+
+.ai-conv-section {
+  padding: 0 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-conv-block {
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-size: 11px;
+}
+
+.ai-conv-user      { background: #eff6ff; border: 1px solid #bfdbfe; }
+.ai-conv-assistant { background: #f0fdf4; border: 1px solid #bbf7d0; }
+.ai-conv-error     { background: #fef2f2; border: 1px solid #fecaca; }
+
+.ai-conv-label {
+  padding: 4px 8px;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.ai-conv-user      .ai-conv-label { color: #1d4ed8; }
+.ai-conv-assistant .ai-conv-label { color: #15803d; }
+.ai-conv-error     .ai-conv-label { color: #b91c1c; }
+
+.ai-conv-pre {
+  margin: 0;
+  padding: 6px 8px;
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
 /* ── User info textarea (settings) ── */
 .user-info-textarea {
   width: 100%;
