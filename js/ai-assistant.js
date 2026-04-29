@@ -96,7 +96,13 @@ export class AIAssistant {
         }
       } catch (err) {
         console.error(`[ai-assistant] Page ${pageNum}:`, err);
-        this._log.push({ pageNum, imageDataUrl, prompt: null, response: `Error: ${err.message}` });
+        const rawInfo = err._raw ? `\n\n— Raw model output —\n${err._raw}` : '';
+        this._log.push({
+          pageNum,
+          imageDataUrl,
+          prompt:   err._prompt || null,
+          response: `Error: ${err.message}${rawInfo}`,
+        });
         this._setStatus(`Page ${pageNum} error: ${err.message}`);
         await new Promise(r => setTimeout(r, 1500));
       }
