@@ -32,7 +32,7 @@ Return ONLY valid JSON — no markdown, no code fences:
 }
 
 Rules:
-- inputPosition: percentage (0–100) from page top/left for WHERE the user enters the value
+- inputPosition MUST be a percentage 0–100 (e.g. top:25.0 means 25% from the top of the page, left:60.0 means 60% from the left). Do NOT use pixel values.
 - canonicalKey examples: first_name, last_name, date_of_birth, email, phone, address, city, zip, country, company, iban, tax_id, signature
 - Only include blank fields for user input — skip pre-filled text
 - For signature fields use type "signature" and leave suggestedValue empty

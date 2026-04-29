@@ -368,8 +368,12 @@ export class PDFViewer {
     const info = this.pages.find(p => p.num === pageNum);
     if (!info) return null;
 
-    const canvasX = (leftPct / 100) * info.canvas.width;
-    const canvasY = (topPct  / 100) * info.canvas.height;
+    // Models sometimes return pixel coordinates instead of 0-100 percentages — normalize
+    const top  = topPct  > 100 ? (topPct  / info.canvas.height) * 100 : topPct;
+    const left = leftPct > 100 ? (leftPct / info.canvas.width)  * 100 : leftPct;
+
+    const canvasX = (left / 100) * info.canvas.width;
+    const canvasY = (top  / 100) * info.canvas.height;
 
     let el;
     if (fieldType === 'checkbox') {
