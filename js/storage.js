@@ -1,5 +1,6 @@
 const DB_NAME = 'pdfsign';
 const DB_VERSION = 2;
+const STORE = 'signatures';
 
 export function openDB() {
   return new Promise((resolve, reject) => {
