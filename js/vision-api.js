@@ -51,13 +51,46 @@ function extractJSON(text) {
   throw new Error('No valid JSON in model response');
 }
 
+async function readStream(response, onToken) {
+  const reader  = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer  = '';
+  let content = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const raw = line.slice(6).trim();
+      if (raw === '[DONE]') continue;
+      try {
+        const chunk = JSON.parse(raw);
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) {
+          content += delta;
+          onToken(delta, content);
+        }
+      } catch {}
+    }
+  }
+
+  return content;
+}
+
 export class VisionAPI {
   constructor(apiKey, model = 'google/gemini-2.0-flash-001') {
     this.apiKey = apiKey;
     this.model  = model;
   }
 
-  async analyzeFormPage(imageDataUrl, extractedText = '', userInfo = '') {
+  async analyzeFormPage(imageDataUrl, extractedText = '', userInfo = '', onToken = null) {
+    const prompt   = buildPrompt(extractedText, userInfo);
     const response = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -72,11 +105,12 @@ export class VisionAPI {
           role: 'user',
           content: [
             { type: 'image_url', image_url: { url: imageDataUrl } },
-            { type: 'text', text: buildPrompt(extractedText, userInfo) },
+            { type: 'text', text: prompt },
           ],
         }],
         max_tokens:  2000,
         temperature: 0.1,
+        stream:      true,
       }),
     });
 
@@ -85,11 +119,9 @@ export class VisionAPI {
       throw new Error(`OpenRouter ${response.status}: ${body.substring(0, 300)}`);
     }
 
-    const data    = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = await readStream(response, onToken || (() => {}));
     if (!content) throw new Error('Empty response from vision model');
 
-    const prompt = buildPrompt(extractedText, userInfo);
     try {
       const result = extractJSON(content);
       result._prompt = prompt;
@@ -102,12 +134,11 @@ export class VisionAPI {
     }
   }
 
-  async chat(history, pageContexts = [], userInfo = '') {
+  async chat(history, pageContexts = [], userInfo = '', onToken = null) {
     if (!history.length) throw new Error('No messages');
 
     const messages = [];
 
-    // First user message gets all page images + extracted text prepended
     const firstUserText = history[0].content;
     const firstContent  = [];
 
@@ -147,6 +178,7 @@ export class VisionAPI {
         messages,
         max_tokens:  2000,
         temperature: 0.3,
+        stream:      true,
       }),
     });
 
@@ -155,8 +187,7 @@ export class VisionAPI {
       throw new Error(`OpenRouter ${response.status}: ${body.substring(0, 300)}`);
     }
 
-    const data    = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = await readStream(response, onToken || (() => {}));
     if (!content) throw new Error('Empty response from model');
     return content;
   }

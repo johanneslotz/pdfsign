@@ -1,4 +1,4 @@
-const CACHE = 'pdfsign-v10';
+const CACHE = 'pdfsign-v11';
 const PRECACHE = [
   './',
   './index.html',

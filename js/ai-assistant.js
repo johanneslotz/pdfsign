@@ -71,11 +71,20 @@ export class AIAssistant {
     for (let i = 0; i < pages.length; i++) {
       const pageNum = pages[i].num;
       this._setStatus(`Analyzing page ${i + 1} of ${pages.length}…`);
+
+      const streamEl = document.createElement('pre');
+      streamEl.className = 'ai-stream-preview';
+      this._fieldList.appendChild(streamEl);
+
       try {
         const imageDataUrl = this.viewer.getPageImageDataUrl(pageNum);
         const { text }     = await this.viewer.getPageTextContent(pageNum);
         const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
-        const result       = await this.visionApi.analyzeFormPage(imageDataUrl, text, userInfo);
+        const result       = await this.visionApi.analyzeFormPage(
+          imageDataUrl, text, userInfo,
+          (_delta, full) => { streamEl.textContent = full; streamEl.scrollTop = streamEl.scrollHeight; }
+        );
+        streamEl.remove();
 
         this._log.push({ pageNum, imageDataUrl, prompt: result._prompt, response: result._raw });
 
@@ -115,6 +124,7 @@ export class AIAssistant {
           });
         }
       } catch (err) {
+        streamEl.remove();
         console.error(`[ai-assistant] Page ${pageNum}:`, err);
         const rawInfo = err._raw ? `\n\n— Raw model output —\n${err._raw}` : '';
         this._log.push({
@@ -169,9 +179,13 @@ export class AIAssistant {
     try {
       const pageContexts = await this._getPageContexts();
       const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
-      const reply        = await this.visionApi.chat(this._chatHistory, pageContexts, userInfo);
+      const textEl       = thinkingBubble.querySelector('.ai-chat-bubble-text');
+      const reply        = await this.visionApi.chat(
+        this._chatHistory, pageContexts, userInfo,
+        (_delta, full) => { textEl.textContent = full; thinkingBubble.scrollIntoView({ block: 'end' }); }
+      );
       this._chatHistory.push({ role: 'assistant', content: reply });
-      thinkingBubble.querySelector('.ai-chat-bubble-text').textContent = reply;
+      textEl.textContent = reply;
     } catch (err) {
       thinkingBubble.classList.add('ai-chat-bubble-error');
       thinkingBubble.querySelector('.ai-chat-bubble-text').textContent = `Error: ${err.message}`;

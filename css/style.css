@@ -738,6 +738,22 @@ textarea.form-field-overlay { resize: none; }
   justify-content: center;
 }
 
+.ai-stream-preview {
+  margin: 6px 14px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 180px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
 /* ── AI Tabs ── */
 .ai-tabs {
   display: flex;
