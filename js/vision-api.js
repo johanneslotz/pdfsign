@@ -101,4 +101,63 @@ export class VisionAPI {
       throw err;
     }
   }
+
+  async chat(history, pageContexts = [], userInfo = '') {
+    if (!history.length) throw new Error('No messages');
+
+    const messages = [];
+
+    // First user message gets all page images + extracted text prepended
+    const firstUserText = history[0].content;
+    const firstContent  = [];
+
+    for (const ctx of pageContexts) {
+      firstContent.push({ type: 'image_url', image_url: { url: ctx.imageDataUrl } });
+    }
+
+    let preamble = '';
+    if (userInfo?.trim()) {
+      preamble += `USER INFORMATION:\n"""\n${userInfo.substring(0, 4000)}\n"""\n\n`;
+    }
+    const pageTexts = pageContexts
+      .filter(p => p.text?.trim())
+      .map(p => `Page ${p.pageNum}:\n${p.text.substring(0, 2000)}`)
+      .join('\n\n');
+    if (pageTexts) {
+      preamble += `PDF text content:\n"""\n${pageTexts}\n"""\n\n`;
+    }
+
+    firstContent.push({ type: 'text', text: preamble + firstUserText });
+    messages.push({ role: 'user', content: firstContent });
+
+    for (let i = 1; i < history.length; i++) {
+      messages.push({ role: history[i].role, content: history[i].content });
+    }
+
+    const response = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type':  'application/json',
+        'HTTP-Referer':  window.location.origin,
+        'X-Title':       'PDFSign AI Assistant',
+      },
+      body: JSON.stringify({
+        model:       this.model,
+        messages,
+        max_tokens:  2000,
+        temperature: 0.3,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`OpenRouter ${response.status}: ${body.substring(0, 300)}`);
+    }
+
+    const data    = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Empty response from model');
+    return content;
+  }
 }

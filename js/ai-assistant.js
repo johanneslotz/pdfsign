@@ -12,24 +12,43 @@ export class AIAssistant {
     this._footer     = document.getElementById('ai-footer');
     this._analyzeBtn = document.getElementById('ai-analyze');
     this._fillAllBtn = document.getElementById('ai-fill-all');
-    this._log        = [];  // [{pageNum, prompt, response}]
+    this._log        = [];  // [{pageNum, imageDataUrl, prompt, response}]
+
+    this._chatHistory      = [];
+    this._chatPageContexts = [];
+    this._chatMessagesEl   = document.getElementById('ai-chat-messages');
+    this._chatInput        = document.getElementById('ai-chat-input');
+    this._chatSendBtn      = document.getElementById('ai-chat-send');
 
     document.getElementById('ai-panel-close').onclick = () => this.hide();
     this._analyzeBtn.onclick = () => this.analyze();
     this._fillAllBtn.onclick = () => this.fillAll();
+
+    for (const tab of document.querySelectorAll('.ai-tab')) {
+      tab.onclick = () => this._switchTab(tab.dataset.tab);
+    }
+    this._chatSendBtn.onclick = () => this.sendChatMessage();
+    this._chatInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.sendChatMessage(); }
+    });
   }
 
   show() { this._panel.classList.remove('hidden'); }
   hide() { this._panel.classList.add('hidden'); }
 
   onPDFLoaded() {
-    this.fields = [];
-    this._log   = [];
+    this.fields            = [];
+    this._log              = [];
+    this._chatHistory      = [];
+    this._chatPageContexts = [];
     this._fieldList.innerHTML = '';
     this._footer.classList.add('hidden');
     this._removeConvEl();
     this._setStatus('Click Analyze to detect form fields.');
     this._analyzeBtn.disabled = false;
+    this._chatInput.disabled  = false;
+    this._chatSendBtn.disabled = false;
+    this._chatMessagesEl.innerHTML = '<div class="ai-chat-hint">Analyze the PDF first for best results, then ask anything about the document.</div>';
     this.show();
   }
 
@@ -39,10 +58,11 @@ export class AIAssistant {
       return;
     }
 
-    this._analyzeBtn.disabled = true;
-    this.fields = [];
-    this._log   = [];
-    this._fieldList.innerHTML = '';
+    this._analyzeBtn.disabled  = true;
+    this.fields                = [];
+    this._log                  = [];
+    this._chatPageContexts     = [];
+    this._fieldList.innerHTML  = '';
     this._footer.classList.add('hidden');
     this._removeConvEl();
 
@@ -126,6 +146,90 @@ export class AIAssistant {
       }
     }
     this.toast?.(`${count} field${count !== 1 ? 's' : ''} filled`);
+  }
+
+  // ── Chat ────────────────────────────────────────────────────────────────────
+
+  async sendChatMessage() {
+    const text = this._chatInput.value.trim();
+    if (!text) return;
+    if (!this.visionApi?.apiKey) {
+      this._addChatBubble('error', 'No API key — open Settings and enter your OpenRouter key.');
+      return;
+    }
+
+    this._chatInput.value = '';
+    this._addChatBubble('user', text);
+    this._chatInput.disabled  = true;
+    this._chatSendBtn.disabled = true;
+
+    this._chatHistory.push({ role: 'user', content: text });
+    const thinkingBubble = this._addChatBubble('assistant', '…');
+
+    try {
+      const pageContexts = await this._getPageContexts();
+      const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
+      const reply        = await this.visionApi.chat(this._chatHistory, pageContexts, userInfo);
+      this._chatHistory.push({ role: 'assistant', content: reply });
+      thinkingBubble.querySelector('.ai-chat-bubble-text').textContent = reply;
+    } catch (err) {
+      thinkingBubble.classList.add('ai-chat-bubble-error');
+      thinkingBubble.querySelector('.ai-chat-bubble-text').textContent = `Error: ${err.message}`;
+    } finally {
+      this._chatInput.disabled  = false;
+      this._chatSendBtn.disabled = false;
+      this._chatInput.focus();
+    }
+  }
+
+  _addChatBubble(role, text) {
+    // Remove hint text on first real bubble
+    const hint = this._chatMessagesEl.querySelector('.ai-chat-hint');
+    if (hint) hint.remove();
+
+    const bubble = document.createElement('div');
+    bubble.className = `ai-chat-bubble ai-chat-bubble-${role}`;
+
+    const textEl = document.createElement('div');
+    textEl.className   = 'ai-chat-bubble-text';
+    textEl.textContent = text;
+    bubble.appendChild(textEl);
+
+    this._chatMessagesEl.appendChild(bubble);
+    bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    return bubble;
+  }
+
+  async _getPageContexts() {
+    if (this._chatPageContexts.length) return this._chatPageContexts;
+
+    // Reuse images already captured during analyze if available
+    if (this._log.length) {
+      this._chatPageContexts = this._log
+        .filter(e => e.imageDataUrl)
+        .map(e => ({ pageNum: e.pageNum, imageDataUrl: e.imageDataUrl, text: '' }));
+      return this._chatPageContexts;
+    }
+
+    const contexts = [];
+    for (const page of this.viewer.pages) {
+      const imageDataUrl      = this.viewer.getPageImageDataUrl(page.num);
+      const { text }          = await this.viewer.getPageTextContent(page.num);
+      contexts.push({ pageNum: page.num, imageDataUrl, text });
+    }
+    this._chatPageContexts = contexts;
+    return contexts;
+  }
+
+  _switchTab(name) {
+    for (const tab of document.querySelectorAll('.ai-tab')) {
+      const active = tab.dataset.tab === name;
+      tab.classList.toggle('ai-tab-active', active);
+      tab.setAttribute('aria-selected', active);
+    }
+    document.getElementById('ai-section-analysis').classList.toggle('hidden', name !== 'analysis');
+    document.getElementById('ai-section-chat').classList.toggle('hidden', name !== 'chat');
+    this._analyzeBtn.style.display = name === 'analysis' ? '' : 'none';
   }
 
   // ── Private ─────────────────────────────────────────────────────────────────
