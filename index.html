@@ -77,10 +77,27 @@
         </button>
       </div>
     </div>
-    <div id="ai-status" class="ai-status">Open a PDF to start.</div>
-    <div id="ai-field-list" class="ai-field-list"></div>
-    <div id="ai-footer" class="ai-panel-footer hidden">
-      <button id="ai-fill-all" class="btn-primary ai-fill-all-btn">Fill All Suggestions</button>
+    <div class="ai-tabs" role="tablist">
+      <button class="ai-tab ai-tab-active" data-tab="analysis" role="tab" aria-selected="true">Analysis</button>
+      <button class="ai-tab" data-tab="chat" role="tab" aria-selected="false">Chat</button>
+    </div>
+    <!-- Analysis section -->
+    <div id="ai-section-analysis" class="ai-section">
+      <div id="ai-status" class="ai-status">Open a PDF to start.</div>
+      <div id="ai-field-list" class="ai-field-list"></div>
+      <div id="ai-footer" class="ai-panel-footer hidden">
+        <button id="ai-fill-all" class="btn-primary ai-fill-all-btn">Fill All Suggestions</button>
+      </div>
+    </div>
+    <!-- Chat section -->
+    <div id="ai-section-chat" class="ai-section hidden">
+      <div id="ai-chat-messages" class="ai-chat-messages">
+        <div class="ai-chat-hint">Analyze the PDF first for best results, then ask anything about the document.</div>
+      </div>
+      <div class="ai-chat-input-row">
+        <input id="ai-chat-input" type="text" class="ai-chat-input" placeholder="Ask about this document…" disabled>
+        <button id="ai-chat-send" class="btn-sm btn-primary" disabled>Send</button>
+      </div>
     </div>
   </div>
 
