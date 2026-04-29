@@ -68,8 +68,10 @@ export class AIAssistant {
 
     const pages = this.viewer.pages;
 
+    try {
     for (let i = 0; i < pages.length; i++) {
-      const pageNum = pages[i].num;
+      const pageNum      = pages[i].num;
+      let   imageDataUrl = null;
       this._setStatus(`Analyzing page ${i + 1} of ${pages.length}…`);
 
       const streamEl = document.createElement('pre');
@@ -77,7 +79,7 @@ export class AIAssistant {
       this._fieldList.appendChild(streamEl);
 
       try {
-        const imageDataUrl = this.viewer.getPageImageDataUrl(pageNum);
+        imageDataUrl       = this.viewer.getPageImageDataUrl(pageNum);
         const { text }     = await this.viewer.getPageTextContent(pageNum);
         const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
         const result       = await this.visionApi.analyzeFormPage(
@@ -137,13 +139,14 @@ export class AIAssistant {
         await new Promise(r => setTimeout(r, 1500));
       }
     }
-
-    this._renderFieldList();
-    this._renderConversation();
-    const n = this.fields.length;
-    this._setStatus(n ? `${n} field${n !== 1 ? 's' : ''} detected.` : 'No form fields detected.');
-    if (n) this._footer.classList.remove('hidden');
-    this._analyzeBtn.disabled = false;
+    } finally {
+      this._renderFieldList();
+      this._renderConversation();
+      const n = this.fields.length;
+      this._setStatus(n ? `${n} field${n !== 1 ? 's' : ''} detected.` : 'No form fields detected.');
+      if (n) this._footer.classList.remove('hidden');
+      this._analyzeBtn.disabled = false;
+    }
   }
 
   async fillAll() {
