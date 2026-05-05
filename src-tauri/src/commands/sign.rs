@@ -31,6 +31,16 @@ pub async fn sign_pdf(pdf_bytes: Vec<u8>, options: SignOptions) -> Result<SignRe
 }
 
 fn do_sign(pdf_bytes: &[u8], opts: &SignOptions) -> Result<Vec<u8>, String> {
+    do_sign_with(pdf_bytes, opts, |digest| {
+        pkcs11_sign(&opts.cert_der, opts.slot_id, digest, &opts.pin)
+    })
+}
+
+/// Core pipeline with an injectable signer — used directly in tests.
+pub(crate) fn do_sign_with<F>(pdf_bytes: &[u8], opts: &SignOptions, signer: F) -> Result<Vec<u8>, String>
+where
+    F: FnOnce(&[u8]) -> Result<Vec<u8>, String>,
+{
     // ── Step 1: parse existing PDF and append a /Sig field ──────────────────
     let mut doc = Document::load_mem(pdf_bytes).map_err(|e| format!("pdf load: {e}"))?;
 
@@ -52,9 +62,13 @@ fn do_sign(pdf_bytes: &[u8], opts: &SignOptions) -> Result<Vec<u8>, String> {
         "Type"      => Object::Name(b"Sig".to_vec()),
         "Filter"    => Object::Name(b"Adobe.PPKLite".to_vec()),
         "SubFilter" => Object::Name(b"adbe.pkcs7.detached".to_vec()),
+        // Large placeholder values so patch_byte_range has enough room for real
+        // offsets (lopdf serialises integers as-is; "9999999999" = 10 digits each).
         "ByteRange" => Object::Array(vec![
-            Object::Integer(0), Object::Integer(0),
-            Object::Integer(0), Object::Integer(0),
+            Object::Integer(9_999_999_999),
+            Object::Integer(9_999_999_999),
+            Object::Integer(9_999_999_999),
+            Object::Integer(9_999_999_999),
         ]),
         "Contents"  => Object::String(
             vec![0u8; CONTENTS_PLACEHOLDER_LEN],
@@ -139,8 +153,8 @@ fn do_sign(pdf_bytes: &[u8], opts: &SignOptions) -> Result<Vec<u8>, String> {
     hasher.update(&staging[br[2]..br[2] + br[3]]);
     let digest = hasher.finalize();
 
-    // ── Step 5: sign via PKCS#11 ────────────────────────────────────────────
-    let raw_sig = pkcs11_sign(&opts.cert_der, opts.slot_id, &digest, &opts.pin)?;
+    // ── Step 5: sign via provided signer (PKCS#11 in production, closure in tests) ──
+    let raw_sig = signer(&digest)?;
 
     // ── Step 6: build CMS SignedData ─────────────────────────────────────────
     let cms_der = build_cms_signed_data(&opts.cert_der, &raw_sig)?;
@@ -316,4 +330,249 @@ fn der_octet_string(data: &[u8]) -> Vec<u8> {
 
 fn der_context_constructed(tag: u8, value: &[u8]) -> Vec<u8> {
     der_tlv(0xa0 | tag, value)
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lopdf::Document;
+    use p256::ecdsa::{signature::Signer, SigningKey};
+    use rand_core::OsRng;
+    use x509_cert::{
+        builder::{Builder, CertificateBuilder, Profile},
+        name::Name,
+        serial_number::SerialNumber,
+        time::Validity,
+    };
+
+    // ── DER helper tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_der_len_short() {
+        assert_eq!(der_len(0), vec![0x00]);
+        assert_eq!(der_len(127), vec![0x7f]);
+    }
+
+    #[test]
+    fn test_der_len_one_byte_long() {
+        assert_eq!(der_len(128), vec![0x81, 0x80]);
+        assert_eq!(der_len(255), vec![0x81, 0xff]);
+    }
+
+    #[test]
+    fn test_der_len_two_byte_long() {
+        assert_eq!(der_len(256), vec![0x82, 0x01, 0x00]);
+        assert_eq!(der_len(0x1234), vec![0x82, 0x12, 0x34]);
+    }
+
+    #[test]
+    fn test_der_sequence_empty() {
+        assert_eq!(der_sequence(&[]), vec![0x30, 0x00]);
+    }
+
+    #[test]
+    fn test_der_sequence_nested() {
+        let inner = der_sequence(&[]);
+        let outer = der_sequence(&[&inner]);
+        // SEQUENCE { SEQUENCE {} } = 30 02 30 00
+        assert_eq!(outer, vec![0x30, 0x02, 0x30, 0x00]);
+    }
+
+    #[test]
+    fn test_der_set_single() {
+        let item = vec![0x02, 0x01, 0x01]; // INTEGER 1
+        let set = der_set(&[&item]);
+        assert_eq!(set, vec![0x31, 0x03, 0x02, 0x01, 0x01]);
+    }
+
+    #[test]
+    fn test_der_octet_string() {
+        let os = der_octet_string(&[0xde, 0xad]);
+        assert_eq!(os, vec![0x04, 0x02, 0xde, 0xad]);
+    }
+
+    // ── ByteRange helpers ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_patch_byte_range_basic() {
+        let mut buf = b"/ByteRange [000000000000000000000000000000]".to_vec();
+        patch_byte_range(&mut buf, 0, [0, 100, 200, 300]).unwrap();
+        let s = std::str::from_utf8(&buf).unwrap();
+        assert!(s.contains("0 100 200 300"), "patched: {s}");
+    }
+
+    #[test]
+    fn test_patch_byte_range_too_small_errors() {
+        let mut buf = b"/ByteRange [0000]".to_vec();
+        let err = patch_byte_range(&mut buf, 0, [0, 100000, 200000, 300000]).unwrap_err();
+        assert!(err.contains("longer than placeholder"), "{err}");
+    }
+
+    #[test]
+    fn test_locate_placeholders_roundtrip() {
+        let hex = "00".repeat(32);
+        let buf = format!("/ByteRange [0 0 0 0] /Contents <{hex}>").into_bytes();
+        let (br_off, open_angle, hex_len) = locate_sig_placeholders(&buf).unwrap();
+        assert_eq!(hex_len, 64);
+        assert_eq!(buf[open_angle], b'<');
+        assert!(br_off < open_angle);
+    }
+
+    // ── Full signing pipeline ────────────────────────────────────────────────
+
+    fn next_id(doc: &mut Document) -> ObjectId {
+        doc.max_id += 1;
+        (doc.max_id, 0)
+    }
+
+    /// Minimal valid single-page PDF built entirely in memory.
+    fn minimal_pdf() -> Vec<u8> {
+        let mut doc = Document::new();
+        let pages_id = next_id(&mut doc);
+        let page_id = next_id(&mut doc);
+        let catalog_id = next_id(&mut doc);
+
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type"  => Object::Name(b"Pages".to_vec()),
+                "Kids"  => Object::Array(vec![Object::Reference(page_id)]),
+                "Count" => Object::Integer(1),
+            }),
+        );
+        doc.objects.insert(
+            page_id,
+            Object::Dictionary(dictionary! {
+                "Type"     => Object::Name(b"Page".to_vec()),
+                "Parent"   => Object::Reference(pages_id),
+                "MediaBox" => Object::Array(vec![
+                    Object::Integer(0), Object::Integer(0),
+                    Object::Integer(612), Object::Integer(792),
+                ]),
+            }),
+        );
+        doc.objects.insert(
+            catalog_id,
+            Object::Dictionary(dictionary! {
+                "Type"  => Object::Name(b"Catalog".to_vec()),
+                "Pages" => Object::Reference(pages_id),
+            }),
+        );
+        doc.trailer.set("Root", Object::Reference(catalog_id));
+
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).expect("save minimal PDF");
+        bytes
+    }
+
+    /// Generate an in-memory P-256 signing key + self-signed DER certificate.
+    fn test_key_and_cert() -> (SigningKey, Vec<u8>) {
+        use der::Encode;
+        use x509_cert::spki::EncodePublicKey;
+
+        let signing_key = SigningKey::random(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+
+        // Build a self-signed cert using x509-cert builder.
+        let subject: Name = "CN=pdfsign test,O=pdfsign dev,C=DE".parse().unwrap();
+        let validity = Validity::from_now(std::time::Duration::from_secs(365 * 86400)).unwrap();
+        let serial = SerialNumber::from(42u32);
+
+        let pub_key = p256::PublicKey::from(verifying_key);
+        let spki = pub_key.to_public_key_der().unwrap();
+
+        let mut builder = CertificateBuilder::new(
+            Profile::Leaf {
+                issuer: subject.clone(),
+                enable_key_agreement: false,
+                enable_key_encipherment: false,
+            },
+            serial,
+            validity,
+            subject,
+            spki.decode_msg::<x509_cert::spki::SubjectPublicKeyInfoOwned>().unwrap(),
+            &signing_key,
+        )
+        .unwrap();
+
+        let cert = builder.build::<p256::ecdsa::DerSignature>().unwrap();
+        let cert_der = cert.to_der().unwrap();
+        (signing_key, cert_der)
+    }
+
+    #[test]
+    fn test_full_pipeline_produces_valid_pdf_structure() {
+        let pdf_bytes = minimal_pdf();
+        let (signing_key, cert_der) = test_key_and_cert();
+
+        let opts = SignOptions {
+            slot_id: 0,
+            cert_der: cert_der.clone(),
+            pin: "unused".into(),
+            reason: Some("Testing".into()),
+            location: None,
+            signer_name: Some("Test Signer".into()),
+            ts_url: None,
+        };
+
+        let signed = do_sign_with(&pdf_bytes, &opts, |digest| {
+            let sig: p256::ecdsa::DerSignature = signing_key.sign(digest);
+            Ok(sig.as_bytes().to_vec())
+        })
+        .expect("signing pipeline should succeed");
+
+        // Must parse as a valid PDF.
+        let doc = Document::load_mem(&signed).expect("signed PDF must be parseable");
+
+        // Must have a /Sig dict with the expected /SubFilter.
+        let has_sig = doc.objects.values().any(|obj| {
+            if let Object::Dictionary(d) = obj {
+                d.get(b"SubFilter").ok().and_then(|o| o.as_name().ok())
+                    == Some(b"adbe.pkcs7.detached")
+            } else {
+                false
+            }
+        });
+        assert!(has_sig, "signed PDF must contain adbe.pkcs7.detached sig dict");
+
+        // /Contents must have been replaced (not all zeros).
+        let contents_still_zero = doc.objects.values().any(|obj| {
+            if let Object::Dictionary(d) = obj {
+                if let Ok(Object::String(bytes, _)) = d.get(b"Contents") {
+                    return bytes.iter().all(|&b| b == 0);
+                }
+            }
+            false
+        });
+        assert!(!contents_still_zero, "/Contents must hold the CMS, not all zeros");
+    }
+
+    #[test]
+    fn test_cms_output_is_valid_der() {
+        let (signing_key, cert_der) = test_key_and_cert();
+        let dummy_sig: p256::ecdsa::DerSignature = signing_key.sign(b"test digest");
+        let cms = build_cms_signed_data(&cert_der, dummy_sig.as_bytes()).unwrap();
+
+        // Must start with SEQUENCE tag.
+        assert_eq!(cms[0], 0x30, "CMS ContentInfo must start with SEQUENCE (0x30)");
+
+        // DER length field must be consistent with actual byte count.
+        let (declared_len, header_len) = if cms[1] < 0x80 {
+            (cms[1] as usize, 2)
+        } else if cms[1] == 0x81 {
+            (cms[2] as usize, 3)
+        } else {
+            (((cms[2] as usize) << 8) | cms[3] as usize, 4)
+        };
+        assert_eq!(
+            cms.len(),
+            declared_len + header_len,
+            "DER length field must match actual byte count"
+        );
+    }
 }
