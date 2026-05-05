@@ -465,7 +465,12 @@ async function openSignDigitalModal() {
     select._certs = certs;
   } catch (err) {
     select.innerHTML = '<option value="">Could not load certificates</option>';
-    showSignDigitalError(err.message);
+    const msg = err.message || String(err);
+    if (msg.startsWith('load ') || msg.includes('opensc') || msg.includes('PKCS#11 module')) {
+      showSignDigitalError(openscMissingHtml(), true);
+    } else {
+      showSignDigitalError(msg);
+    }
   }
 }
 
@@ -475,10 +480,19 @@ function closeSignDigitalModal() {
   document.getElementById('sign-digital-error').classList.add('hidden');
 }
 
-function showSignDigitalError(msg) {
+function showSignDigitalError(msg, html = false) {
   const el = document.getElementById('sign-digital-error');
-  el.textContent = msg;
+  if (html) el.innerHTML = msg;
+  else el.textContent = msg;
   el.classList.remove('hidden');
+}
+
+function openscMissingHtml() {
+  return `OpenSC smartcard middleware not found on this system.`
+    + ` <a href="https://github.com/OpenSC/OpenSC/releases/latest" target="_blank" rel="noopener">`
+    + `Download OpenSC</a>, install it, then try again.`
+    + `<br><small style="color:var(--text-muted)">Linux: <code>sudo apt install opensc</code>`
+    + ` &nbsp;|&nbsp; macOS: download the <code>.pkg</code> from the link above</small>`;
 }
 
 async function onSignDigitalSubmit() {

@@ -32,7 +32,32 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Utilities",
+    "shortDescription": "Sign PDF documents with a smartcard",
+    "longDescription": "pdfsign lets you open PDF documents, place handwritten signature images, fill form fields, and apply cryptographic PAdES signatures using a hardware smartcard (e.g. an electronic ID card or USB token via OpenSC).",
+    "copyright": "Copyright (c) 2024 pdfsign contributors",
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": null,
+      "entitlements": null
+    },
+    "linux": {
+      "deb": {
+        "depends": ["opensc"]
+      },
+      "rpm": {
+        "depends": ["opensc"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    }
   },
   "plugins": {
     "dialog": {},
