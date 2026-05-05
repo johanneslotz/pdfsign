@@ -45,6 +45,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Save PDF
       </button>
+      <button id="btn-sign-digital" class="btn-primary" disabled title="Sign with smartcard (desktop app only)" style="display:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M7 15h.01M11 15h2"/></svg>
+        Sign with card
+      </button>
     </div>
   </header>
 
@@ -187,6 +191,35 @@
 
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
+
+  <!-- Digital signing modal (Tauri only) -->
+  <div id="sign-digital-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sign-digital-title">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="sign-digital-title">Sign with smartcard</h2>
+        <button id="sign-digital-close" class="btn-ghost" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+        <label style="font-size:.85rem;font-weight:500">Certificate
+          <select id="sign-cert-select" style="width:100%;margin-top:4px;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius);font-size:.9rem">
+            <option value="">Loading certificates…</option>
+          </select>
+        </label>
+        <label style="font-size:.85rem;font-weight:500">Reason <span style="font-weight:400;color:var(--text-muted)">(optional)</span>
+          <input id="sign-reason" type="text" placeholder="e.g. Approved" style="width:100%;margin-top:4px;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius);font-size:.9rem">
+        </label>
+        <label style="font-size:.85rem;font-weight:500">PIN
+          <input id="sign-pin" type="password" placeholder="Card PIN" autocomplete="current-password" style="width:100%;margin-top:4px;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius);font-size:.9rem">
+        </label>
+        <p id="sign-digital-error" class="hidden" style="color:#dc2626;font-size:.85rem;margin:0"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+          <button id="sign-digital-cancel" class="btn-secondary">Cancel</button>
+          <button id="sign-digital-submit" class="btn-primary">Sign</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="js/app.js"></script>
   <script>

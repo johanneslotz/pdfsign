@@ -1,0 +1,49 @@
+[package]
+name = "pdfsign"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "pdfsign_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "pdfsign"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# PKCS#11
+cryptoki = "0.7"
+
+# PAdES / CMS
+cms = "0.2"
+x509-cert = "0.2"
+der = "0.7"
+sha2 = "0.10"
+rsa = { version = "0.9", features = ["sha2"] }
+p256 = { version = "0.13", features = ["ecdsa"] }
+signature = "2"
+hex = "0.4"
+
+# PDF byte manipulation
+lopdf = "0.34"
+
+# HTTP client for RFC 3161 TSA requests
+reqwest = { version = "0.12", features = ["blocking"] }
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

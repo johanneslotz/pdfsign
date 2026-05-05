@@ -6,6 +6,7 @@ import { FormMemory }     from './form-memory.js';
 import { VisionAPI }      from './vision-api.js';
 import { AIAssistant }    from './ai-assistant.js';
 import { initSettingsModal, loadSettings } from './settings.js';
+import { isTauri, listSmartcardCerts, cryptoSign } from './sign/orchestrator.js';
 
 let viewer   = null;
 let editor   = null;
@@ -41,6 +42,7 @@ function init() {
   document.getElementById('btn-place-sig').onclick   = startPlacement;
   document.getElementById('btn-add-text').onclick    = startTextMode;
   document.getElementById('btn-save').onclick        = savePDF;
+  initDigitalSignUI();
   document.getElementById('sig-modal-close').onclick = closeSigModal;
   document.getElementById('sig-clear').onclick       = () => sigPad.clear();
 
@@ -136,6 +138,7 @@ async function loadFile(file) {
   document.getElementById('btn-add-text').disabled  = false;
   document.getElementById('btn-save').disabled      = editor === null;
   document.getElementById('btn-ai').disabled        = false;
+  if (isTauri()) document.getElementById('btn-sign-digital').disabled = false;
 
   console.log(`[pdfsign] Loaded ${viewer.pages.length} page(s)`);
   toast(`Loaded ${viewer.pages.length} page${viewer.pages.length === 1 ? '' : 's'}`);
@@ -413,6 +416,125 @@ function toast(msg) {
   el.classList.remove('hidden');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add('hidden'), 2400);
+}
+
+// ── Digital signing (Tauri only) ─────────────────────────────────────────────
+
+function initDigitalSignUI() {
+  const btn = document.getElementById('btn-sign-digital');
+  if (isTauri()) {
+    btn.style.display = '';
+  } else {
+    // In the browser, swap the button for a "get the app" link.
+    btn.style.display = '';
+    btn.title = 'Cryptographic signing requires the desktop app';
+    btn.onclick = () => toast('Cryptographic signing is only available in the desktop app.');
+    return;
+  }
+
+  btn.onclick = openSignDigitalModal;
+  document.getElementById('sign-digital-close').onclick  = closeSignDigitalModal;
+  document.getElementById('sign-digital-cancel').onclick = closeSignDigitalModal;
+  document.querySelector('#sign-digital-modal .modal-backdrop').onclick = closeSignDigitalModal;
+  document.getElementById('sign-digital-submit').onclick = onSignDigitalSubmit;
+}
+
+async function openSignDigitalModal() {
+  const modal  = document.getElementById('sign-digital-modal');
+  const select = document.getElementById('sign-cert-select');
+  const errEl  = document.getElementById('sign-digital-error');
+
+  errEl.classList.add('hidden');
+  select.innerHTML = '<option value="">Loading certificates…</option>';
+  modal.classList.remove('hidden');
+
+  try {
+    const certs = await listSmartcardCerts();
+    select.innerHTML = '';
+    if (!certs.length) {
+      select.innerHTML = '<option value="">No signing certificates found</option>';
+      return;
+    }
+    certs.forEach((c, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${c.label || c.subject} (expires ${c.not_after})`;
+      opt.dataset.certIndex = i;
+      select.appendChild(opt);
+    });
+    select._certs = certs;
+  } catch (err) {
+    select.innerHTML = '<option value="">Could not load certificates</option>';
+    showSignDigitalError(err.message);
+  }
+}
+
+function closeSignDigitalModal() {
+  document.getElementById('sign-digital-modal').classList.add('hidden');
+  document.getElementById('sign-pin').value = '';
+  document.getElementById('sign-digital-error').classList.add('hidden');
+}
+
+function showSignDigitalError(msg) {
+  const el = document.getElementById('sign-digital-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+async function onSignDigitalSubmit() {
+  const select = document.getElementById('sign-cert-select');
+  const pin    = document.getElementById('sign-pin').value;
+  const reason = document.getElementById('sign-reason').value.trim();
+  const submit = document.getElementById('sign-digital-submit');
+
+  const certs = select._certs;
+  const certIdx = parseInt(select.value, 10);
+  if (!certs || isNaN(certIdx)) {
+    showSignDigitalError('Select a certificate first.'); return;
+  }
+  if (!pin) {
+    showSignDigitalError('Enter your card PIN.'); return;
+  }
+  if (!pdfBytes) {
+    showSignDigitalError('No PDF loaded.'); return;
+  }
+
+  const cert = certs[certIdx];
+  submit.disabled = true;
+  submit.textContent = 'Signing…';
+  document.getElementById('sign-digital-error').classList.add('hidden');
+
+  try {
+    const signed = await cryptoSign(new Uint8Array(pdfBytes), {
+      slot_id:     cert.slot_id,
+      cert_der:    Array.from(cert.cert_der),
+      pin,
+      reason:      reason || 'Approved',
+      location:    '',
+      signer_name: cert.subject,
+      ts_url:      null,
+    });
+
+    const origName = document.getElementById('file-name').textContent.replace(/\.pdf$/i, '');
+    if (isTauri()) {
+      const { invoke } = window.__TAURI__.core;
+      const saved = await invoke('save_pdf_dialog', {
+        bytes:         Array.from(signed),
+        suggestedName: `${origName}_signed.pdf`,
+      });
+      if (saved) toast('PDF signed and saved.');
+    } else {
+      const blob = new Blob([signed], { type: 'application/pdf' });
+      triggerDownload(URL.createObjectURL(blob), `${origName}_signed.pdf`);
+      toast('Signed PDF downloaded.');
+    }
+    closeSignDigitalModal();
+  } catch (err) {
+    showSignDigitalError(err.message || String(err));
+  } finally {
+    submit.disabled = false;
+    submit.textContent = 'Sign';
+  }
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────

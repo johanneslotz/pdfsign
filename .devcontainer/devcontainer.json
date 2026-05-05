@@ -1,0 +1,40 @@
+{
+  "name": "pdfsign",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+
+  // Mount the host's SoftHSM2 token directory so test tokens persist
+  // across container rebuilds (optional — remove if not wanted).
+  "mounts": [
+    "source=pdfsign-softhsm2,target=/home/vscode/.softhsm2,type=volume"
+  ],
+
+  "remoteUser": "vscode",
+
+  // Install npm deps and initialise a SoftHSM2 token for Phase-2 testing.
+  "postCreateCommand": "npm install && bash .devcontainer/init-softhsm.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tauri-apps.tauri-vscode",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "vadimcn.vscode-lldb"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.features": "all",
+        "editor.formatOnSave": true,
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        }
+      }
+    }
+  },
+
+  // Expose Vite/Tauri dev server if used later.
+  "forwardPorts": [1420]
+}
