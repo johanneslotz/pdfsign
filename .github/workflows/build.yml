@@ -1,0 +1,114 @@
+name: Build
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux
+            targets: deb,appimage
+          - os: macos-14
+            name: macos
+            targets: dmg
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.name }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            opensc \
+            libpcsclite-dev
+
+      - name: Install macOS dependencies
+        if: startsWith(matrix.os, 'macos')
+        run: brew install opensc
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build Tauri app
+        env:
+          # macOS code signing — set these secrets in GitHub repository settings.
+          # Leave unset for unsigned builds (users will see Gatekeeper warning).
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: cargo tauri build --bundles ${{ matrix.targets }}
+
+      - name: Collect Linux artifacts
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          mkdir -p dist
+          find src-tauri/target/release/bundle -name "*.deb" -o -name "*.AppImage" \
+            | xargs -I{} cp {} dist/
+
+      - name: Collect macOS artifacts
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          mkdir -p dist
+          find src-tauri/target/release/bundle -name "*.dmg" \
+            | xargs -I{} cp {} dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdfsign-${{ matrix.name }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+  # Publish GitHub Release when a version tag is pushed
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**
+          generate_release_notes: true
