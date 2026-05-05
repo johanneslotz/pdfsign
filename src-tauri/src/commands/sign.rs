@@ -58,7 +58,7 @@ where
     }
 
     // Signature dictionary — /Contents and /ByteRange are placeholders.
-    let sig_dict = dictionary! {
+    let mut sig_dict = dictionary! {
         "Type"      => Object::Name(b"Sig".to_vec()),
         "Filter"    => Object::Name(b"Adobe.PPKLite".to_vec()),
         "SubFilter" => Object::Name(b"adbe.pkcs7.detached".to_vec()),
@@ -74,10 +74,15 @@ where
             vec![0u8; CONTENTS_PLACEHOLDER_LEN],
             StringFormat::Hexadecimal,
         ),
-        "Reason"    => lit(opts.reason.as_deref().unwrap_or("Approved")),
-        "Location"  => lit(opts.location.as_deref().unwrap_or("")),
         "Name"      => lit(opts.signer_name.as_deref().unwrap_or("")),
     };
+    // Omit /Reason and /Location when empty — unverified free-text adds no value.
+    if let Some(r) = opts.reason.as_deref().filter(|s| !s.is_empty()) {
+        sig_dict.set(b"Reason", lit(r));
+    }
+    if let Some(l) = opts.location.as_deref().filter(|s| !s.is_empty()) {
+        sig_dict.set(b"Location", lit(l));
+    }
     doc.objects.insert(sig_dict_id, Object::Dictionary(sig_dict));
 
     // Invisible widget annotation for the sig field.

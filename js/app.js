@@ -498,7 +498,6 @@ function openscMissingHtml() {
 async function onSignDigitalSubmit() {
   const select = document.getElementById('sign-cert-select');
   const pin    = document.getElementById('sign-pin').value;
-  const reason = document.getElementById('sign-reason').value.trim();
   const submit = document.getElementById('sign-digital-submit');
 
   const certs = select._certs;
@@ -523,7 +522,7 @@ async function onSignDigitalSubmit() {
       slot_id:     cert.slot_id,
       cert_der:    Array.from(cert.cert_der),
       pin,
-      reason:      reason || 'Approved',
+      reason:      null,
       location:    '',
       signer_name: cert.subject,
       ts_url:      null,
