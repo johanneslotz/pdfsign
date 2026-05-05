@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "identifier": "app.pdfsign.desktop",
   "build": {
-    "frontendDist": "../",
-    "devUrl": "http://localhost:1420"
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "node scripts/copy-frontend.js"
   },
   "app": {
     "withGlobalTauri": true,
