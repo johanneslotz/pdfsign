@@ -58,12 +58,28 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2" --locked
 
-      - name: Build Tauri app
+      # Import the Apple Developer certificate only when the secret is populated.
+      # Without this step, Tauri builds an unsigned .dmg (fine for dev/testing;
+      # users will see a Gatekeeper prompt on first launch).
+      - name: Import macOS signing certificate
+        if: startsWith(matrix.os, 'macos') && secrets.APPLE_CERTIFICATE != ''
         env:
-          # macOS code signing — set these secrets in GitHub repository settings.
-          # Leave unset for unsigned builds (users will see Gatekeeper warning).
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import /tmp/cert.p12 -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "" build.keychain
+
+      - name: Build Tauri app
+        env:
+          # Signing identity — only passed when secrets exist so Tauri doesn't
+          # attempt to sign with an empty/missing certificate.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
