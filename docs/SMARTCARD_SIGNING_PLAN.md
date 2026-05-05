@@ -117,12 +117,59 @@ Cons
   and lives in browser memory. Worth offering as a clearly-labelled fallback,
   not the main path.
 
-### Option F — WebUSB/WebHID + custom CCID stack
+### Option F — Chromium Smart Card API (`navigator.smartCard`)
 
-Theoretically possible. In practice means writing an APDU layer for every
-card OS (NXP JCOP, Gemalto IDPrime, Athena IDProtect, …). Months of work,
-fragile, no PIN-pad readers, blocked by enterprise USB policies. **Not
-recommended.**
+Chromium ships an experimental **Smart Card API** that exposes PC/SC to the
+page: enumerate readers, connect to a card, transmit raw APDUs. Surface is
+roughly:
+
+```js
+const ctx = await navigator.smartCard.establishContext();
+const readers = await ctx.listReaders();
+const conn = await ctx.connect(readers[0], 'shared', { preferredProtocols: ['t1'] });
+const resp = await conn.transmit(selectAppletApdu);
+```
+
+Status (as of 2025): implemented in Chromium, but **gated to Isolated Web
+Apps** (IWA) in managed/enterprise deployments. Not callable from a normal
+`https://pdfsign.app` origin, and not available in Firefox or Safari at all.
+
+Pros
+- Pure browser, no native helper, no extension.
+- Direct PC/SC — works with any reader the OS already supports.
+
+Cons
+- IWA-only ⇒ requires enterprise policy + signed bundle install. Defeats
+  most of the "just open the website" appeal.
+- You still have to drive the card yourself: SELECT applet, VERIFY PIN,
+  PSO: COMPUTE DIGITAL SIGNATURE — i.e. an APDU layer per card OS (PIV,
+  IAS-ECC, OpenPGP, German nPA, Estonian eID, …). This is the same code
+  you'd avoid by going through PKCS#11.
+- No PIN-pad reader support beyond what raw APDUs allow.
+- API still flagged "experimental"; spec is not on a W3C standards track.
+
+Adjacent Chrome-only options:
+- **`chrome.platformKeys`** (MV3 extension API, ChromeOS): list client
+  certs including smartcard-backed ones and call `subtleCrypto.sign` on
+  the matching key handle. Works without writing APDUs but is ChromeOS
+  only and requires an extension.
+- **`chrome.certificateProvider`**: lets an extension *expose* a smartcard
+  to the OS cert store. Useful for the inverse direction (TLS client auth)
+  rather than for us.
+
+Verdict: keep on the radar as **Option F-bis** for IWA deployments (e.g.
+internal enterprise rollout where a managed bundle is acceptable). Wrap it
+behind the same provider interface as the local agent so the orchestrator
+doesn't care which transport delivers the signature. Not a replacement for
+Option A on the public web today.
+
+### Option G — WebUSB/WebHID + custom CCID stack
+
+Theoretically possible. In practice means writing the CCID protocol *and*
+an APDU layer for every card OS (NXP JCOP, Gemalto IDPrime, Athena
+IDProtect, …). Months of work, fragile, no PIN-pad readers, blocked by
+enterprise USB policies. **Not recommended.** Option F is strictly better
+where it's available, since at least PC/SC handles the reader side.
 
 ---
 
