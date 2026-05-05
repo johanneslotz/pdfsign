@@ -1059,3 +1059,7 @@ textarea.form-field-overlay { resize: none; }
   .ai-panel { width: 100%; border-left: none; border-top: 1px solid var(--border); top: auto; height: 60vh; }
   .profile-fields { grid-template-columns: 1fr; }
 }
+
+/* ── Sign-digital error link ── */
+#sign-digital-error a { color: inherit; text-decoration: underline; }
+#sign-digital-error code { font-size: .8em; background: rgba(0,0,0,.06); padding: 1px 4px; border-radius: 3px; }
