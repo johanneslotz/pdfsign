@@ -339,9 +339,6 @@ fn der_context_constructed(tag: u8, value: &[u8]) -> Vec<u8> {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-
-// ── Tests ────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -578,6 +575,195 @@ mod tests {
             cms.len(),
             declared_len + header_len,
             "DER length field must match actual byte count"
+        );
+    }
+
+    // ── opts helper ──────────────────────────────────────────────────────────
+
+    fn make_opts(cert_der: Vec<u8>) -> SignOptions {
+        SignOptions {
+            slot_id: 0,
+            cert_der,
+            pin: "unused".into(),
+            reason: None,
+            location: None,
+            signer_name: Some("Test Signer".into()),
+            ts_url: None,
+        }
+    }
+
+    fn sign_with_key(pdf: &[u8], key: &SigningKey, cert_der: Vec<u8>) -> Vec<u8> {
+        let opts = make_opts(cert_der);
+        do_sign_with(pdf, &opts, |digest| {
+            let sig: p256::ecdsa::DerSignature = key.sign(digest);
+            Ok(sig.as_bytes().to_vec())
+        })
+        .expect("sign_with_key failed")
+    }
+
+    // ── ByteRange correctness ────────────────────────────────────────────────
+
+    #[test]
+    fn test_byte_range_values_are_consistent() {
+        let (key, cert_der) = test_key_and_cert();
+        let signed = sign_with_key(&minimal_pdf(), &key, cert_der);
+
+        // Locate the patched ByteRange in the output bytes.
+        let br_off = rfind(&signed, b"/ByteRange").unwrap();
+        let open = signed[br_off..].iter().position(|&b| b == b'[').unwrap() + br_off + 1;
+        let close = signed[open..].iter().position(|&b| b == b']').unwrap() + open;
+        let nums: Vec<usize> = std::str::from_utf8(&signed[open..close])
+            .unwrap()
+            .split_whitespace()
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let (a, b, c, d) = (nums[0], nums[1], nums[2], nums[3]);
+
+        assert_eq!(a, 0, "ByteRange must start at 0");
+        assert_eq!(signed[a + b], b'<', "br[0]+br[1] must point to opening '<'");
+        assert_eq!(signed[c - 1], b'>', "byte before br[2] must be closing '>'");
+        assert_eq!(c + d, signed.len(), "br[2]+br[3] must equal file length");
+    }
+
+    // ── CMS cert embedding ───────────────────────────────────────────────────
+
+    /// Decode the actual CMS bytes out of /Contents (strips zero padding).
+    fn extract_cms_from_signed(signed: &[u8]) -> Vec<u8> {
+        let ct_off = rfind(signed, b"/Contents").unwrap();
+        let mut i = ct_off + b"/Contents".len();
+        while matches!(signed[i], b' ' | b'\n' | b'\r' | b'\t') {
+            i += 1;
+        }
+        assert_eq!(signed[i], b'<');
+        i += 1;
+        let close = signed[i..].iter().position(|&b| b == b'>').unwrap() + i;
+        let hex = std::str::from_utf8(&signed[i..close]).unwrap();
+
+        // Read DER header to find the true length, then decode exactly that.
+        let hdr = hex::decode(&hex[..8]).unwrap();
+        let (payload_len, hdr_len) = if hdr[1] < 0x80 {
+            (hdr[1] as usize, 2)
+        } else if hdr[1] == 0x81 {
+            (hdr[2] as usize, 3)
+        } else {
+            (((hdr[2] as usize) << 8) | hdr[3] as usize, 4)
+        };
+        let total = payload_len + hdr_len;
+        hex::decode(&hex[..total * 2]).expect("CMS hex must be valid")
+    }
+
+    #[test]
+    fn test_cms_cert_embedded_in_contents() {
+        let (key, cert_der) = test_key_and_cert();
+        let signed = sign_with_key(&minimal_pdf(), &key, cert_der.clone());
+        let cms = extract_cms_from_signed(&signed);
+
+        // The signer certificate DER must appear verbatim inside the CMS blob
+        // (embedded in the [0] certificates field as a raw DER sequence).
+        let found = cms.windows(cert_der.len()).any(|w| w == cert_der.as_slice());
+        assert!(found, "signer cert DER must be embedded verbatim in CMS /Contents");
+    }
+
+    // ── Double-sign ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_double_sign_preserves_first_signature() {
+        let (key1, cert1) = test_key_and_cert();
+        let (key2, cert2) = test_key_and_cert();
+
+        let once = sign_with_key(&minimal_pdf(), &key1, cert1);
+        let twice = sign_with_key(&once, &key2, cert2);
+
+        // Both passes must survive: count /SubFilter entries in final output.
+        let count = twice
+            .windows(b"adbe.pkcs7.detached".len())
+            .filter(|w| *w == b"adbe.pkcs7.detached")
+            .count();
+        assert_eq!(count, 2, "double-signed PDF must contain two SubFilter entries");
+    }
+
+    // ── Large PDF ────────────────────────────────────────────────────────────
+
+    fn large_pdf() -> Vec<u8> {
+        let mut doc = Document::new();
+        doc.max_id += 1;
+        let pages_id: ObjectId = (doc.max_id, 0);
+        doc.max_id += 1;
+        let page_id: ObjectId = (doc.max_id, 0);
+        doc.max_id += 1;
+        let catalog_id: ObjectId = (doc.max_id, 0);
+
+        // Embed a large metadata stream to push offsets above 1 MB.
+        doc.max_id += 1;
+        let blob_id: ObjectId = (doc.max_id, 0);
+        let big_data = vec![b'X'; 1_200_000];
+        doc.objects.insert(
+            blob_id,
+            Object::Stream(lopdf::Stream::new(
+                lopdf::Dictionary::new(),
+                big_data,
+            )),
+        );
+
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type"  => Object::Name(b"Pages".to_vec()),
+                "Kids"  => Object::Array(vec![Object::Reference(page_id)]),
+                "Count" => Object::Integer(1),
+            }),
+        );
+        doc.objects.insert(
+            page_id,
+            Object::Dictionary(dictionary! {
+                "Type"     => Object::Name(b"Page".to_vec()),
+                "Parent"   => Object::Reference(pages_id),
+                "MediaBox" => Object::Array(vec![
+                    Object::Integer(0), Object::Integer(0),
+                    Object::Integer(612), Object::Integer(792),
+                ]),
+            }),
+        );
+        doc.objects.insert(
+            catalog_id,
+            Object::Dictionary(dictionary! {
+                "Type"  => Object::Name(b"Catalog".to_vec()),
+                "Pages" => Object::Reference(pages_id),
+            }),
+        );
+        doc.trailer.set("Root", Object::Reference(catalog_id));
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).expect("save large PDF");
+        bytes
+    }
+
+    #[test]
+    fn test_large_pdf_signs_successfully() {
+        let pdf = large_pdf();
+        assert!(pdf.len() > 1_000_000, "fixture must be >1 MB");
+
+        let (key, cert_der) = test_key_and_cert();
+        let signed = sign_with_key(&pdf, &key, cert_der);
+
+        // ByteRange values must cover offsets > 1 MB.
+        let br_off = rfind(&signed, b"/ByteRange").unwrap();
+        let open = signed[br_off..].iter().position(|&b| b == b'[').unwrap() + br_off + 1;
+        let close = signed[open..].iter().position(|&b| b == b']').unwrap() + open;
+        let nums: Vec<usize> = std::str::from_utf8(&signed[open..close])
+            .unwrap()
+            .split_whitespace()
+            .map(|s| s.parse().unwrap())
+            .collect();
+        assert!(nums[2] > 1_000_000, "ByteRange offset must be >1 MB for large PDF");
+        assert_eq!(nums[2] + nums[3], signed.len());
+
+        // CMS must still fit inside the placeholder.
+        let cms = extract_cms_from_signed(&signed);
+        assert!(
+            cms.len() < CONTENTS_PLACEHOLDER_LEN,
+            "CMS ({} B) must fit in placeholder ({} B)",
+            cms.len(),
+            CONTENTS_PLACEHOLDER_LEN
         );
     }
 }
