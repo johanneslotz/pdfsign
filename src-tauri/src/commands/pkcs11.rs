@@ -91,16 +91,17 @@ pub async fn list_smartcard_certs() -> Result<Vec<CertInfo>, String> {
                 Err(_) => continue,
             };
 
-            let mut label = String::new();
+            let mut label_bytes: Vec<u8> = Vec::new();
             let mut cert_der: Vec<u8> = Vec::new();
 
             for attr in &attrs {
                 match attr {
-                    Attribute::Label(v) => label = v.clone(),
+                    Attribute::Label(v) => label_bytes = v.clone(),
                     Attribute::Value(v) => cert_der = v.clone(),
                     _ => {}
                 }
             }
+            let label = String::from_utf8_lossy(&label_bytes).into_owned();
 
             if cert_der.is_empty() {
                 continue;
