@@ -332,3 +332,338 @@ orchestrator.
 Phase 1 only, with the soft-token provider, behind a `?sign=crypto` flag.
 That proves the PAdES pipeline works in-browser and gives us a realistic
 target for the agent in Phase 2.
+
+---
+
+---
+
+# Tauri Hybrid Plan (preferred path)
+
+Supersedes the local-agent architecture above. The app ships as a Tauri
+desktop application on macOS and Linux; the **same HTML/JS/CSS** also works
+as a plain website (PWA) for users who just need visual signing or the
+PKCS#12 soft fallback. Crypto signing is only available in the Tauri build.
+
+---
+
+## Why Tauri instead of the local agent
+
+| Concern | Local agent | Tauri |
+|---|---|---|
+| Install footprint | agent binary + browser open | single `.app` / `.AppImage` |
+| localhost TLS dance | required | gone — IPC is Tauri's built-in channel |
+| CORS / pairing tokens | required | gone |
+| PKCS#11 access | agent calls it | Rust backend calls it directly |
+| PAdES library | JS (pkijs) + manual byte patch | Rust (`cryptoki` + `cms` crates) |
+| PIN dialog | agent native UI | Tauri window or OS dialog |
+| Code signing / notarisation | agent binary only | whole `.app` bundle |
+| Auto-update | custom channel | Tauri updater built-in |
+| Effort | ~4–5 weeks (agent + browser CMS) | ~2–3 weeks total |
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│            Tauri WebView  (same HTML/JS)          │
+│                                                  │
+│  js/sign/orchestrator.js                         │
+│    detects window.__TAURI__ → tauri-provider.js  │
+│    fallback                 → p12-soft.js        │
+│                                                  │
+│  invoke('list_smartcard_certs')                  │
+│  invoke('sign_pdf', { pdfBytes, options })       │
+└─────────────────┬────────────────────────────────┘
+                  │ Tauri IPC (no network, no TLS)
+                  ▼
+┌──────────────────────────────────────────────────┐
+│            Rust backend  (src-tauri/)            │
+│                                                  │
+│  commands/pkcs11.rs   — enumerate certs          │
+│  commands/sign.rs     — full PAdES pipeline      │
+│    ├─ lopdf: add /Sig placeholder + ByteRange    │
+│    ├─ sha2: hash byte ranges                     │
+│    ├─ cryptoki: C_Sign via PKCS#11 module        │
+│    └─ cms + x509-cert + der: build SignedData    │
+│  commands/file.rs     — native open/save dialogs │
+└──────────────────────────────────────────────────┘
+                  │ PKCS#11 C API
+                  ▼
+┌──────────────────────────────────────────────────┐
+│  OS PKCS#11 module                               │
+│  macOS: /Library/…/opensc-pkcs11.so             │
+│         or Keychain via security-framework       │
+│  Linux: /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so│
+└──────────────────────────────────────────────────┘
+```
+
+---
+
+## Repository layout after migration
+
+```
+pdfsign/
+├── index.html          ← unchanged
+├── css/                ← unchanged
+├── js/
+│   ├── app.js          ← unchanged
+│   ├── pdf-editor.js   ← unchanged (visual ops)
+│   ├── pdf-viewer.js   ← unchanged
+│   ├── signature-pad.js← unchanged
+│   └── sign/           ← NEW
+│       ├── orchestrator.js     detects Tauri, throws 'not-in-app' otherwise
+│       └── tauri-provider.js   invokes Rust commands
+├── src-tauri/          ← NEW
+│   ├── Cargo.toml
+│   ├── tauri.conf.json
+│   ├── icons/
+│   └── src/
+│       ├── main.rs
+│       └── commands/
+│           ├── sign.rs   PAdES pipeline
+│           ├── pkcs11.rs cert enumeration + signing
+│           └── file.rs   open/save dialogs
+└── docs/
+    └── SMARTCARD_SIGNING_PLAN.md
+```
+
+Everything in `js/` that exists today is untouched. The new `js/sign/`
+layer is additive. The Tauri build bundles the whole `js/` + `index.html`
+tree as the WebView frontend; the hosted PWA serves the same files.
+
+---
+
+## Tauri commands (Rust API surface)
+
+```rust
+// List PKCS#11 slots that have a signing certificate loaded.
+// Returns JSON-serialisable structs; never returns key material.
+#[tauri::command]
+async fn list_smartcard_certs() -> Result<Vec<CertInfo>, String>
+
+// Full PAdES B-B pipeline.  PDF bytes go in, signed PDF bytes come out.
+// PIN prompt is shown natively before C_Sign is called.
+// reason / location / signer_name go into the /Sig dictionary.
+#[tauri::command]
+async fn sign_pdf(
+    pdf_bytes: Vec<u8>,
+    slot_id: u64,
+    hash_alg: String,          // "SHA-256" | "SHA-384" | "SHA-512"
+    reason: String,
+    location: String,
+    signer_name: String,
+    ts_url: Option<String>,    // RFC 3161 TSA; None → B-B, Some → B-T
+) -> Result<Vec<u8>, String>
+
+// Native file open dialog → bytes
+#[tauri::command]
+async fn open_pdf_dialog() -> Result<Option<(String, Vec<u8>)>, String>
+
+// Native save dialog; writes bytes to chosen path
+#[tauri::command]
+async fn save_pdf_dialog(bytes: Vec<u8>, suggested_name: String) -> Result<(), String>
+```
+
+---
+
+## Rust crate choices
+
+| Concern | Crate | Notes |
+|---|---|---|
+| Tauri framework | `tauri 2.x` | 2.0 GA; supports macOS + Linux + Android later |
+| PKCS#11 | `cryptoki` | idiomatic Rust wrapper, replaces `pkcs11` crate |
+| CMS / SignedData | `cms` (RustCrypto) | PAdES-grade CMS without OpenSSL dep |
+| X.509 parsing | `x509-cert` (RustCrypto) | pairs with `cms` |
+| DER encoding | `der` (RustCrypto) | needed for signed attributes |
+| PDF byte ops | `lopdf` | parse + mutate PDF for /Sig placeholder |
+| Hashing | `sha2` | SHA-256/384/512 |
+| macOS Keychain | `security-framework` | optional fallback if no PKCS#11 module |
+| TSA client | hand-rolled ~100 LoC | `cms::TimeStampReq` + `reqwest` |
+| File dialogs | `rfd` or tauri `dialog` plugin | native OS picker |
+
+No OpenSSL dependency — the RustCrypto stack is pure Rust and cross-compiles
+cleanly for both macOS (aarch64 + x86_64) and Linux (x86_64).
+
+---
+
+## PAdES pipeline in Rust (sign.rs)
+
+```
+sign_pdf(pdf_bytes, slot_id, …)
+  │
+  ├─1─ lopdf::Document::load_mem(pdf_bytes)
+  │       add /AcroForm /Sig field + widget annotation
+  │       write /ByteRange [0 0 0 0] placeholder
+  │       write /Contents <000000…> (16 384 zero bytes)
+  │       save to staging_bytes
+  │
+  ├─2─ locate actual ByteRange offsets in staging_bytes
+  │       (scan for "/ByteRange [" literal — deterministic)
+  │       patch real offsets in-place
+  │
+  ├─3─ sha2::Sha256: digest bytes[br[0]..br[1]] ++ bytes[br[2]..br[3]]
+  │
+  ├─4─ cryptoki: C_SignInit(CKM_RSA_PKCS / CKM_ECDSA)
+  │              [native PIN dialog here]
+  │              C_Sign(digest) → raw_sig_bytes
+  │
+  ├─5─ cms::builder::SignedDataBuilder
+  │       .signer(cert, chain, signed_attrs, raw_sig_bytes)
+  │       .build_der() → cms_der
+  │
+  ├─6─ optional: TSA round-trip
+  │       cms::TimeStampReq::new(SHA-256(cms_der))
+  │       POST to ts_url → TimeStampResp
+  │       embed as unsigned attr id-aa-signatureTimeStampToken
+  │
+  └─7─ hex-encode cms_der, pad to 16 384 bytes
+        splice into Contents placeholder
+        return final_bytes
+```
+
+---
+
+## JS-side changes
+
+`js/sign/orchestrator.js`:
+
+```js
+import { TauriProvider } from './tauri-provider.js';
+import { P12SoftProvider } from './p12-soft.js';
+
+const isTauri = () => Boolean(window.__TAURI__);
+
+export async function cryptoSign(pdfBytes, options) {
+  if (!isTauri()) throw new Error('not-in-app'); // caller shows download prompt
+  return new TauriProvider().sign(pdfBytes, options);
+}
+```
+
+`js/sign/tauri-provider.js`:
+
+```js
+import { invoke } from '@tauri-apps/api/core';
+
+export class TauriProvider {
+  async listCerts()                  { return invoke('list_smartcard_certs'); }
+  async sign(pdfBytes, options)      { return invoke('sign_pdf', { pdfBytes: Array.from(pdfBytes), ...options }); }
+}
+```
+
+`app.js` gains a single new "Sign digitally" button that calls
+`cryptoSign(currentPdfBytes, { slotId, reason, … })` and triggers a
+save dialog. All existing visual-signature code is untouched.
+
+---
+
+## Hybrid PWA behaviour
+
+| Context | Crypto signing | Visual signing |
+|---|---|---|
+| Tauri desktop app | Full smartcard PAdES | Yes (unchanged) |
+| Browser (any) | Not available — "Download desktop app" prompt | Yes (unchanged) |
+
+Detection is one check: `window.__TAURI__`. No feature flags, no URL params.
+The "Sign digitally" button is simply hidden (or replaced by a download
+prompt) when `window.__TAURI__` is falsy. No PKCS#12 path, no pkijs
+dependency, no CMS code in the browser at all.
+
+---
+
+## Phased plan
+
+### Phase 0 — Tauri scaffold (0.5 day)
+
+- `npm create tauri-app` in repo root, targeting the existing `index.html`.
+- Confirm the existing UI renders and all visual features still work inside
+  the WebView.
+- Commit `src-tauri/` skeleton; CI builds `.app` and `.AppImage`.
+
+### Phase 1 — Native file dialogs (0.5 day)
+
+- Implement `open_pdf_dialog` and `save_pdf_dialog` commands.
+- In JS, detect Tauri and route file open/save through these commands instead
+  of the current `<input type="file">` / `URL.createObjectURL` approach.
+- Fallback: browser keeps existing flow.
+
+Exit criteria: open a PDF via the native macOS/Linux file picker; save works.
+
+### Phase 2 — PAdES pipeline with soft token (2 days)
+
+- Implement `sign_pdf` command using a PKCS#11 software token
+  (`softhsm2`) so the whole pipeline can be tested without a physical card.
+- Implement `list_smartcard_certs` via `cryptoki`.
+- Wire up `js/sign/` modules and the "Sign digitally" button.
+- Verify output: Adobe Reader "Signed and all signatures are valid";
+  `pdfsig -nssdir /etc/pki/nssdb <file>` reports valid.
+
+Exit criteria: reproducible green test with SoftHSM2, CI-runnable.
+
+### Phase 3 — Live smartcard (1–2 days)
+
+- Test with YubiKey PIV (slot 9c, `opensc-pkcs11.so`).
+- Test with a German nPA or similar eID card.
+- Handle CKM_RSA_PKCS_PSS: detect mechanism from slot info and encode
+  RSASSA-PSS `algorithmIdentifier` correctly in the CMS.
+- Implement native PIN dialog: minimal Tauri window with a password input,
+  or use the OS credential prompt where available.
+
+Exit criteria: end-to-end sign with physical card on macOS and Linux.
+
+### Phase 4 — Hardening (2 days)
+
+- RFC 3161 timestamp (B-T): call FreeTSA or Sectigo TSA, embed token.
+- Visible signature appearance: use the drawn canvas PNG as the `/AP`
+  stream of the `/Sig` widget.
+- Multiple signatures: incremental PDF update so earlier sigs stay valid.
+- Error handling: card removed mid-sign, wrong PIN (with retry counter),
+  PIN locked, expired certificate → clear user-facing messages.
+- macOS Keychain path via `security-framework` as an additional provider
+  (no PKCS#11 module needed for certs in Keychain).
+
+### Phase 5 — Distribution (1 day)
+
+- macOS: code-sign + notarise the `.app`; wrap in a `.dmg`.
+- Linux: `.AppImage` + `.deb`; optionally a Flatpak for the sandboxed path.
+- Tauri updater: point at a GitHub Releases JSON endpoint.
+- Ship "Test my card" diagnostic command that lists readers, slots, certs,
+  and checks key usage without signing anything.
+
+### Phase 6 — "Get the app" prompt on web (0.5 day)
+
+- When `window.__TAURI__` is falsy, the "Sign digitally" button is replaced
+  by a banner: "Cryptographic signing requires the desktop app — Download
+  for macOS / Linux".
+- No JS crypto code ships to the browser. No pkijs, no pkcs12, no CMS.
+
+---
+
+## Total effort estimate
+
+| Phase | Work |
+|---|---|
+| 0 Tauri scaffold | 0.5 day |
+| 1 File dialogs | 0.5 day |
+| 2 PAdES + soft token | 2 days |
+| 3 Live smartcard | 1.5 days |
+| 4 Hardening | 2 days |
+| 5 Distribution | 1 day |
+| 6 "Get the app" prompt | 0.5 day |
+| **Total** | **~8 days** |
+
+---
+
+## Risks
+
+- **`lopdf` placeholder stability**: confirm that `save()` is byte-stable
+  and the `/ByteRange` offsets we scan for are unique and correctly patched.
+  If lopdf reorders objects, switch to a pure byte-append strategy (write
+  the /Sig as an incremental update appended to the original bytes).
+- **PSS salt length**: German eID and some Gemalto cards mandate a specific
+  PSS salt length that must match the `algorithmIdentifier` in the CMS.
+  Wrong encoding is the #1 cause of "signature invalid" in Adobe Reader.
+- **Tauri 2.x API churn**: the `invoke` serialisation format changed
+  between 1.x and 2.x. Pin to 2.x from the start; do not start on 1.x.
+- **SoftHSM2 on CI**: needs `libsofthsm2.so` in the CI image;
+  straightforward on Ubuntu runners, needs a Homebrew step on macOS.
