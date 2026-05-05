@@ -41,6 +41,10 @@ lopdf = "0.34"
 # HTTP client for RFC 3161 TSA requests
 reqwest = { version = "0.12", features = ["blocking"] }
 
+[dev-dependencies]
+rand_core = { version = "0.6", features = ["getrandom"] }
+x509-cert = { version = "0.2", features = ["builder"] }
+
 [profile.release]
 strip = true
 opt-level = "z"
