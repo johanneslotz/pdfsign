@@ -61,7 +61,6 @@
     }
   },
   "plugins": {
-    "dialog": {},
     "shell": {
       "open": false
     }
