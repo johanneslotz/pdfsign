@@ -495,6 +495,82 @@ function openscMissingHtml() {
     + ` &nbsp;|&nbsp; macOS: download the <code>.pkg</code> from the link above</small>`;
 }
 
+function renderStampPng(signerName, dateStr) {
+  const W = 340, H = 70;
+  const canvas = document.createElement('canvas');
+  canvas.width  = W * 2;  // 2× for sharpness
+  canvas.height = H * 2;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);
+
+  // badge background
+  ctx.fillStyle = '#1d4ed8';
+  ctx.fillRect(0, 0, 52, H);
+
+  // white shield outline
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(26, 14); ctx.lineTo(38, 19); ctx.lineTo(38, 28);
+  ctx.quadraticCurveTo(38, 38, 26, 43);
+  ctx.quadraticCurveTo(14, 38, 14, 28);
+  ctx.lineTo(14, 19); ctx.closePath();
+  ctx.stroke();
+  // checkmark
+  ctx.beginPath();
+  ctx.moveTo(20, 29); ctx.lineTo(24, 34); ctx.lineTo(32, 24);
+  ctx.stroke();
+
+  // badge label
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 6px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('DIGITALLY', 26, 50);
+  ctx.fillText('SIGNED', 26, 58);
+
+  // white content area
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(52, 0, W - 52, H);
+
+  // border
+  ctx.strokeStyle = '#1d4ed8';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(0.75, 0.75, W - 1.5, H - 1.5);
+
+  // title
+  ctx.fillStyle = '#1d4ed8';
+  ctx.font = 'bold 7px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('PADES DIGITAL SIGNATURE', 60, 14);
+
+  // signer name
+  ctx.fillStyle = '#111827';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(signerName, 60, 30);
+
+  // date
+  ctx.fillStyle = '#374151';
+  ctx.font = '8.5px sans-serif';
+  ctx.fillText(`Date: ${dateStr}`, 60, 43);
+
+  // validity row
+  ctx.fillStyle = '#16a34a';
+  ctx.beginPath();
+  ctx.arc(62, 56, 5.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(59, 56); ctx.lineTo(61, 59); ctx.lineTo(66, 52);
+  ctx.stroke();
+  ctx.fillStyle = '#16a34a';
+  ctx.font = 'bold 8px sans-serif';
+  ctx.fillText('Signature valid — certificate trusted', 71, 59);
+
+  return canvas.toDataURL('image/png')
+    .replace(/^data:image\/png;base64,/, '');
+}
+
 async function onSignDigitalSubmit() {
   const select = document.getElementById('sign-cert-select');
   const pin    = document.getElementById('sign-pin').value;
@@ -517,6 +593,14 @@ async function onSignDigitalSubmit() {
   submit.textContent = 'Signing…';
   document.getElementById('sign-digital-error').classList.add('hidden');
 
+  const wantVisual = document.getElementById('sign-visual-stamp').checked;
+  let visual_png = null;
+  if (wantVisual) {
+    const dateStr = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+    const b64 = renderStampPng(cert.subject, dateStr);
+    visual_png = Array.from(atob(b64), c => c.charCodeAt(0));
+  }
+
   try {
     const signed = await cryptoSign(new Uint8Array(pdfBytes), {
       slot_id:     cert.slot_id,
@@ -526,6 +610,7 @@ async function onSignDigitalSubmit() {
       location:    '',
       signer_name: cert.subject,
       ts_url:      null,
+      visual_png,
     });
 
     const origName = document.getElementById('file-name').textContent.replace(/\.pdf$/i, '');

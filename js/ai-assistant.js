@@ -49,7 +49,6 @@ export class AIAssistant {
     this._chatInput.disabled  = false;
     this._chatSendBtn.disabled = false;
     this._chatMessagesEl.innerHTML = '<div class="ai-chat-hint">Analyze the PDF first for best results, then ask anything about the document.</div>';
-    this.show();
   }
 
   async analyze() {

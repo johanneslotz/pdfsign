@@ -1,5 +1,5 @@
 use der::Encode;
-use lopdf::{dictionary, Document, Object, ObjectId, StringFormat};
+use lopdf::{dictionary, Document, Object, ObjectId, Stream, StringFormat};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use x509_cert::{der::Decode, Certificate};
@@ -17,6 +17,8 @@ pub struct SignOptions {
     pub location: Option<String>,
     pub signer_name: Option<String>,
     pub ts_url: Option<String>,
+    /// PNG bytes of the visual stamp to embed; None = invisible signature.
+    pub visual_png: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -85,19 +87,87 @@ where
     }
     doc.objects.insert(sig_dict_id, Object::Dictionary(sig_dict));
 
-    // Invisible widget annotation for the sig field.
-    let widget = dictionary! {
-        "Type"    => Object::Name(b"Annot".to_vec()),
-        "Subtype" => Object::Name(b"Widget".to_vec()),
-        "FT"      => Object::Name(b"Sig".to_vec()),
-        "Rect"    => Object::Array(vec![
-            Object::Integer(0), Object::Integer(0),
-            Object::Integer(0), Object::Integer(0),
-        ]),
-        "V" => Object::Reference(sig_dict_id),
-        "T" => lit("Signature1"),
-        "F" => Object::Integer(132), // Print | Hidden
-        "P" => Object::Reference(first_page_id),
+    // Widget annotation — visible with stamp image, or invisible otherwise.
+    let widget = if let Some(png_bytes) = &opts.visual_png {
+        // Stamp dimensions: 340×70 pt (≈ 12 cm × 2.5 cm), placed 20 pt from bottom-left.
+        let (x, y, w, h) = (20i64, 20i64, 340i64, 70i64);
+
+        doc.max_id += 1;
+        let img_id: ObjectId = (doc.max_id, 0);
+        doc.max_id += 1;
+        let ap_xobj_id: ObjectId = (doc.max_id, 0);
+
+        // Decode PNG → raw RGBA via the `png` crate, then store as /DCTDecode JPEG
+        // approximation. Simpler: store the PNG as a /FlateDecode image XObject.
+        // lopdf accepts raw deflate streams; we embed the PNG directly as a
+        // DCTDecode-free image by decoding to raw RGB first.
+        let (img_w, img_h, rgb_bytes) = decode_png_to_rgb(png_bytes)?;
+
+        let image_stream = Stream::new(
+            dictionary! {
+                "Type"             => Object::Name(b"XObject".to_vec()),
+                "Subtype"          => Object::Name(b"Image".to_vec()),
+                "Width"            => Object::Integer(img_w as i64),
+                "Height"           => Object::Integer(img_h as i64),
+                "ColorSpace"       => Object::Name(b"DeviceRGB".to_vec()),
+                "BitsPerComponent" => Object::Integer(8),
+            },
+            rgb_bytes,
+        );
+        doc.objects.insert(img_id, Object::Stream(image_stream));
+
+        // Appearance stream: draws the image scaled to the widget rect.
+        let ap_content = format!(
+            "q {w} 0 0 {h} 0 0 cm /Im0 Do Q"
+        );
+        let ap_stream = Stream::new(
+            dictionary! {
+                "Type"     => Object::Name(b"XObject".to_vec()),
+                "Subtype"  => Object::Name(b"Form".to_vec()),
+                "BBox"     => Object::Array(vec![
+                    Object::Integer(0), Object::Integer(0),
+                    Object::Integer(w), Object::Integer(h),
+                ]),
+                "Resources" => Object::Dictionary(dictionary! {
+                    "XObject" => Object::Dictionary(dictionary! {
+                        "Im0" => Object::Reference(img_id),
+                    }),
+                }),
+            },
+            ap_content.into_bytes(),
+        );
+        doc.objects.insert(ap_xobj_id, Object::Stream(ap_stream));
+
+        dictionary! {
+            "Type"    => Object::Name(b"Annot".to_vec()),
+            "Subtype" => Object::Name(b"Widget".to_vec()),
+            "FT"      => Object::Name(b"Sig".to_vec()),
+            "Rect"    => Object::Array(vec![
+                Object::Integer(x), Object::Integer(y),
+                Object::Integer(x + w), Object::Integer(y + h),
+            ]),
+            "V"  => Object::Reference(sig_dict_id),
+            "T"  => lit("Signature1"),
+            "F"  => Object::Integer(4), // Print
+            "P"  => Object::Reference(first_page_id),
+            "AP" => Object::Dictionary(dictionary! {
+                "N" => Object::Reference(ap_xobj_id),
+            }),
+        }
+    } else {
+        dictionary! {
+            "Type"    => Object::Name(b"Annot".to_vec()),
+            "Subtype" => Object::Name(b"Widget".to_vec()),
+            "FT"      => Object::Name(b"Sig".to_vec()),
+            "Rect"    => Object::Array(vec![
+                Object::Integer(0), Object::Integer(0),
+                Object::Integer(0), Object::Integer(0),
+            ]),
+            "V" => Object::Reference(sig_dict_id),
+            "T" => lit("Signature1"),
+            "F" => Object::Integer(132), // Print | Hidden
+            "P" => Object::Reference(first_page_id),
+        }
     };
     doc.objects.insert(sig_field_id, Object::Dictionary(widget));
 
@@ -298,6 +368,47 @@ fn build_cms_signed_data(cert_der: &[u8], raw_sig: &[u8]) -> Result<Vec<u8>, Str
         OID_SIGNED_DATA,
         &der_context_constructed(0, &signed_data),
     ]))
+}
+
+// ── PNG helper ───────────────────────────────────────────────────────────────
+
+/// Decode a PNG to (width, height, interleaved_RGB_bytes).
+/// Alpha is composited onto white so the result is always DeviceRGB.
+fn decode_png_to_rgb(png_bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
+    use png::ColorType;
+
+    let decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
+    let mut reader = decoder.read_info().map_err(|e| format!("png decode: {e}"))?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).map_err(|e| format!("png frame: {e}"))?;
+
+    let (w, h) = (info.width, info.height);
+    let pixels = &buf[..info.buffer_size()];
+
+    let rgb = match info.color_type {
+        ColorType::Rgb => pixels.to_vec(),
+        ColorType::Rgba => {
+            pixels.chunks_exact(4).flat_map(|p| {
+                let a = p[3] as f32 / 255.0;
+                [
+                    (p[0] as f32 * a + 255.0 * (1.0 - a)) as u8,
+                    (p[1] as f32 * a + 255.0 * (1.0 - a)) as u8,
+                    (p[2] as f32 * a + 255.0 * (1.0 - a)) as u8,
+                ]
+            }).collect()
+        }
+        ColorType::Grayscale => pixels.iter().flat_map(|&g| [g, g, g]).collect(),
+        ColorType::GrayscaleAlpha => {
+            pixels.chunks_exact(2).flat_map(|p| {
+                let a = p[1] as f32 / 255.0;
+                let v = (p[0] as f32 * a + 255.0 * (1.0 - a)) as u8;
+                [v, v, v]
+            }).collect()
+        }
+        _ => return Err("unsupported PNG color type".into()),
+    };
+
+    Ok((w, h, rgb))
 }
 
 // ── Minimal DER helpers ──────────────────────────────────────────────────────
@@ -520,6 +631,7 @@ mod tests {
             location: None,
             signer_name: Some("Test Signer".into()),
             ts_url: None,
+            visual_png: None,
         };
 
         let signed = do_sign_with(&pdf_bytes, &opts, |digest| {
@@ -589,6 +701,7 @@ mod tests {
             location: None,
             signer_name: Some("Test Signer".into()),
             ts_url: None,
+            visual_png: None,
         }
     }
 

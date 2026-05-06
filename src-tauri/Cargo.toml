@@ -38,6 +38,9 @@ hex = "0.4"
 # PDF byte manipulation
 lopdf = "0.34"
 
+# PNG decoding for visual signature stamp
+png = "0.17"
+
 # HTTP client for RFC 3161 TSA requests
 reqwest = { version = "0.12", features = ["blocking"] }
 

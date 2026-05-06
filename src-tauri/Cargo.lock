@@ -2611,6 +2611,7 @@ dependencies = [
  "hex",
  "lopdf",
  "p256",
+ "png 0.17.16",
  "rand_core",
  "reqwest 0.12.28",
  "rsa",
