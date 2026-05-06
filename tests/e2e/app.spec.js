@@ -9,10 +9,14 @@ const SIGNATURE_PNG = path.join(__dirname, '../fixtures/signature.png');
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 async function loadPDF(page, file = SAMPLE_PDF) {
+  await page.waitForLoadState('networkidle');
   await page.locator('#file-input').setInputFiles(file);
   await expect(page.locator('.page-wrapper').first()).toBeVisible({ timeout: 15000 });
-  // AI panel auto-opens after PDF load and can overlap toolbar buttons in CI.
-  await page.locator('#ai-panel-close').click({ force: true });
+  // AI panel auto-opens after PDF load and can overlap toolbar buttons.
+  await page.evaluate(() => {
+    const panel = document.getElementById('ai-panel');
+    if (panel) panel.classList.add('hidden');
+  });
 }
 
 async function drawSignature(page) {

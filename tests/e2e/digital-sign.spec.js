@@ -26,9 +26,11 @@ async function injectTauriMock(page, invokeMap) {
 
 function errEntry(msg) { return { __error: msg }; }
 
+// label is intentionally empty so c.label || c.subject uses the subject,
+// making 'Jane Smith' searchable in the dropdown option text.
 const FAKE_CERT = {
   slot_id: 0,
-  label: 'User certificate',
+  label: '',
   subject: 'CN=Jane Smith,O=Test Org,C=DE',
   issuer: 'CN=Test CA',
   serial: 'DEADBEEF',
@@ -41,10 +43,21 @@ const SIGNED_PDF_RESPONSE = {
 };
 
 async function loadPDF(page, file = SAMPLE_PDF) {
+  await page.waitForLoadState('networkidle');
   await page.locator('#file-input').setInputFiles(file);
   await expect(page.locator('.page-wrapper').first()).toBeVisible({ timeout: 15000 });
-  // AI panel auto-opens after PDF load and can overlap toolbar buttons in CI.
-  await page.locator('#ai-panel-close').click({ force: true });
+  // AI panel auto-opens after PDF load and can overlap toolbar buttons.
+  // Use evaluate (not click) so it works even if the button is off-screen.
+  await page.evaluate(() => {
+    const panel = document.getElementById('ai-panel');
+    if (panel) panel.classList.add('hidden');
+  });
+}
+
+/** Open the sign-digital modal and wait until it is visible. */
+async function openModal(page) {
+  await page.click('#btn-sign-digital');
+  await expect(page.locator('#sign-digital-modal')).not.toHaveClass(/hidden/);
 }
 
 // ── Browser-mode (no window.__TAURI__) ───────────────────────────────────────
@@ -86,47 +99,44 @@ test.describe('Digital sign modal — certs found', () => {
   });
 
   test('opens modal on button click', async ({ page }) => {
-    await page.click('#btn-sign-digital');
-    await expect(page.locator('#sign-digital-modal')).not.toHaveClass(/hidden/);
+    await openModal(page);
   });
 
   test('populates dropdown with certificate', async ({ page }) => {
-    await page.click('#btn-sign-digital');
-    await expect(
-      page.locator('#sign-cert-select option', { hasText: 'Jane Smith' })
-    ).toBeVisible({ timeout: 5000 });
+    await openModal(page);
+    await expect(page.locator('#sign-cert-select')).toContainText('Jane Smith', { timeout: 5000 });
   });
 
   test('closes on Cancel', async ({ page }) => {
-    await page.click('#btn-sign-digital');
+    await openModal(page);
     await page.click('#sign-digital-cancel');
     await expect(page.locator('#sign-digital-modal')).toHaveClass(/hidden/);
   });
 
   test('closes on X button', async ({ page }) => {
-    await page.click('#btn-sign-digital');
+    await openModal(page);
     await page.click('#sign-digital-close');
     await expect(page.locator('#sign-digital-modal')).toHaveClass(/hidden/);
   });
 
   test('closes on backdrop click', async ({ page }) => {
-    await page.click('#btn-sign-digital');
+    await openModal(page);
     await page.locator('#sign-digital-modal .modal-backdrop')
       .click({ position: { x: 5, y: 5 } });
     await expect(page.locator('#sign-digital-modal')).toHaveClass(/hidden/);
   });
 
   test('clears PIN field when modal is closed and reopened', async ({ page }) => {
-    await page.click('#btn-sign-digital');
+    await openModal(page);
     await page.locator('#sign-pin').fill('1234');
     await page.click('#sign-digital-cancel');
-    await page.click('#btn-sign-digital');
+    await expect(page.locator('#sign-digital-modal')).toHaveClass(/hidden/);
+    await openModal(page);
     await expect(page.locator('#sign-pin')).toHaveValue('');
   });
 
   test('submit without selecting a cert shows error', async ({ page }) => {
-    await page.click('#btn-sign-digital');
-    // Nullify the cert list so validation fails
+    await openModal(page);
     await page.evaluate(() => {
       document.getElementById('sign-cert-select')._certs = null;
     });
@@ -136,22 +146,17 @@ test.describe('Digital sign modal — certs found', () => {
   });
 
   test('submit with empty PIN shows error', async ({ page }) => {
-    await page.click('#btn-sign-digital');
-    await expect(
-      page.locator('#sign-cert-select option', { hasText: 'Jane Smith' })
-    ).toBeVisible({ timeout: 5000 });
+    await openModal(page);
+    await expect(page.locator('#sign-cert-select')).toContainText('Jane Smith', { timeout: 5000 });
     await page.locator('#sign-cert-select').selectOption({ index: 0 });
-    // Leave PIN empty
     await page.click('#sign-digital-submit');
     await expect(page.locator('#sign-digital-error')).not.toHaveClass(/hidden/);
     await expect(page.locator('#sign-digital-error')).toContainText(/PIN/i);
   });
 
   test('successful sign closes modal and shows toast', async ({ page }) => {
-    await page.click('#btn-sign-digital');
-    await expect(
-      page.locator('#sign-cert-select option', { hasText: 'Jane Smith' })
-    ).toBeVisible({ timeout: 5000 });
+    await openModal(page);
+    await expect(page.locator('#sign-cert-select')).toContainText('Jane Smith', { timeout: 5000 });
     await page.locator('#sign-cert-select').selectOption({ index: 0 });
     await page.locator('#sign-pin').fill('1234');
     await page.click('#sign-digital-submit');
@@ -249,10 +254,8 @@ test.describe('Digital sign modal — sign failure', () => {
   });
 
   test('shows error and keeps modal open for retry', async ({ page }) => {
-    await page.click('#btn-sign-digital');
-    await expect(
-      page.locator('#sign-cert-select option', { hasText: 'Jane Smith' })
-    ).toBeVisible({ timeout: 5000 });
+    await openModal(page);
+    await expect(page.locator('#sign-cert-select')).toContainText('Jane Smith', { timeout: 5000 });
     await page.locator('#sign-cert-select').selectOption({ index: 0 });
     await page.locator('#sign-pin').fill('wrongpin');
     await page.click('#sign-digital-submit');

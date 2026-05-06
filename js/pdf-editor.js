@@ -1,11 +1,10 @@
-const { PDFDocument } = PDFLib;
-
 export class PDFEditor {
   constructor() {
     this.doc = null;
   }
 
   async load(arrayBuffer) {
+    const { PDFDocument } = PDFLib;
     this.doc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
   }
 
