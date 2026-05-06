@@ -146,13 +146,15 @@ jobs:
 
       - name: Build Tauri app
         env:
-          # Signing identity — only passed when secrets exist so Tauri doesn't
-          # attempt to sign with an empty/missing certificate.
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: cargo tauri build --bundles ${{ matrix.targets }}
+        run: |
+          # If no signing identity is configured, unset the env var so Tauri
+          # falls back to the signingIdentity:null in tauri.conf.json (unsigned build).
+          [ -z "$APPLE_SIGNING_IDENTITY" ] && unset APPLE_SIGNING_IDENTITY
+          cargo tauri build --bundles ${{ matrix.targets }}
 
       - name: Collect Linux artifacts
         if: startsWith(matrix.os, 'ubuntu')
