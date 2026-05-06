@@ -13,7 +13,7 @@
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
   </script>
-  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="vendor/pdf-lib.min.js"></script>
 </head>
 <body>
 
@@ -194,7 +194,7 @@
   <!-- Digital signing modal (Tauri only) -->
   <div id="sign-digital-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sign-digital-title">
     <div class="modal-backdrop"></div>
-    <div class="modal-box">
+    <div class="modal-content">
       <div class="modal-header">
         <h2 id="sign-digital-title">Sign with smartcard</h2>
         <button id="sign-digital-close" class="btn-ghost" aria-label="Close">&times;</button>

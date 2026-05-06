@@ -138,7 +138,7 @@ async function loadFile(file) {
   document.getElementById('btn-add-text').disabled  = false;
   document.getElementById('btn-save').disabled      = editor === null;
   document.getElementById('btn-ai').disabled        = false;
-  if (isTauri()) document.getElementById('btn-sign-digital').disabled = false;
+  document.getElementById('btn-sign-digital').disabled = false;
 
   console.log(`[pdfsign] Loaded ${viewer.pages.length} page(s)`);
   toast(`Loaded ${viewer.pages.length} page${viewer.pages.length === 1 ? '' : 's'}`);
