@@ -4,7 +4,6 @@
   "identifier": "app.pdfsign.desktop",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "../dist",
     "beforeDevCommand": "node scripts/copy-frontend.js",
     "beforeBuildCommand": "node scripts/copy-frontend.js"
   },

@@ -4,3 +4,4 @@ playwright-report/
 tests/fixtures/
 src-tauri/target/
 dist/
+.cargo-home/

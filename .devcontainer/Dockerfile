@@ -27,3 +27,8 @@ RUN cargo install tauri-cli --version "^2" --locked
 # Pre-warm the Rust registry cache so first `cargo build` inside the
 # container doesn't re-download everything from scratch.
 RUN cargo search tauri --limit 1 > /dev/null 2>&1 || true
+
+# The pre-warm step runs as root, so hand the registry back to the
+# non-root vscode user used by the devcontainer.
+RUN chown -R vscode:rustlang /usr/local/cargo/registry \
+    && chmod -R g+rwX /usr/local/cargo/registry

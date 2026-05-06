@@ -1,7 +1,7 @@
 use cryptoki::{
     context::{CInitializeArgs, Pkcs11},
     mechanism::Mechanism,
-    object::{Attribute, AttributeType, CertificateType, KeyType, ObjectClass},
+    object::{Attribute, AttributeType, KeyType, ObjectClass},
     session::UserType,
     types::AuthPin,
 };
@@ -73,10 +73,9 @@ pub async fn list_smartcard_certs() -> Result<Vec<CertInfo>, String> {
             Err(_) => continue,
         };
 
-        let template = vec![
-            Attribute::Class(ObjectClass::CERTIFICATE),
-            Attribute::CertificateType(CertificateType::X_509),
-        ];
+        // Some vendor PKCS#11 stacks do not expose CKA_CERTIFICATE_TYPE
+        // consistently; filtering only by class improves compatibility.
+        let template = vec![Attribute::Class(ObjectClass::CERTIFICATE)];
 
         let handles = match session.find_objects(&template) {
             Ok(h) => h,
@@ -107,7 +106,8 @@ pub async fn list_smartcard_certs() -> Result<Vec<CertInfo>, String> {
                 continue;
             }
 
-            // Parse the X.509 certificate to extract human-readable fields.
+            // Parse X.509 metadata best-effort; keep certs even when metadata
+            // parsing fails so users can still pick a signer certificate.
             let (subject, issuer, serial, not_after) = match Certificate::from_der(&cert_der) {
                 Ok(cert) => {
                     let subject = cert.tbs_certificate.subject.to_string();
@@ -123,7 +123,19 @@ pub async fn list_smartcard_certs() -> Result<Vec<CertInfo>, String> {
                     let not_after = cert.tbs_certificate.validity.not_after.to_string();
                     (subject, issuer, serial, not_after)
                 }
-                Err(_) => continue,
+                Err(_) => {
+                    let fallback_subject = if label.is_empty() {
+                        "Unknown certificate".to_string()
+                    } else {
+                        label.clone()
+                    };
+                    (
+                        fallback_subject,
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                    )
+                }
             };
 
             // Skip certs whose key usage doesn't include digital signature
