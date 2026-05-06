@@ -43,6 +43,8 @@ const SIGNED_PDF_RESPONSE = {
 async function loadPDF(page, file = SAMPLE_PDF) {
   await page.locator('#file-input').setInputFiles(file);
   await expect(page.locator('.page-wrapper').first()).toBeVisible({ timeout: 15000 });
+  // AI panel auto-opens after PDF load and can overlap toolbar buttons in CI.
+  await page.locator('#ai-panel-close').click({ force: true });
 }
 
 // ── Browser-mode (no window.__TAURI__) ───────────────────────────────────────

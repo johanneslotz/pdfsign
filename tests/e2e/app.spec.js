@@ -11,6 +11,8 @@ const SIGNATURE_PNG = path.join(__dirname, '../fixtures/signature.png');
 async function loadPDF(page, file = SAMPLE_PDF) {
   await page.locator('#file-input').setInputFiles(file);
   await expect(page.locator('.page-wrapper').first()).toBeVisible({ timeout: 15000 });
+  // AI panel auto-opens after PDF load and can overlap toolbar buttons in CI.
+  await page.locator('#ai-panel-close').click({ force: true });
 }
 
 async function drawSignature(page) {
@@ -80,7 +82,7 @@ test.describe('Signature drawing', () => {
 
   test('closes modal on backdrop click', async ({ page }) => {
     await page.click('#btn-signature');
-    await page.locator('.modal-backdrop').click({ position: { x: 5, y: 5 } });
+    await page.locator('#sig-modal .modal-backdrop').click({ position: { x: 5, y: 5 } });
     await expect(page.locator('#sig-modal')).toHaveClass(/hidden/);
   });
 
