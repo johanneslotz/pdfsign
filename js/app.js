@@ -495,6 +495,20 @@ function openscMissingHtml() {
     + ` &nbsp;|&nbsp; macOS: download the <code>.pkg</code> from the link above</small>`;
 }
 
+function cnFromDn(dn) {
+  // Extract the CN value from an X.500 DN like "CN=Jane Smith,O=Org,C=DE"
+  const m = dn.match(/(?:^|,)\s*CN=([^,]+)/i);
+  return m ? m[1].trim() : dn;
+}
+
+function fitText(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  while (text.length > 1 && ctx.measureText(text + '…').width > maxW) {
+    text = text.slice(0, -1);
+  }
+  return text + '…';
+}
+
 function renderStampPng(signerName, dateStr) {
   const W = 340, H = 70;
   const canvas = document.createElement('canvas');
@@ -543,10 +557,10 @@ function renderStampPng(signerName, dateStr) {
   ctx.textAlign = 'left';
   ctx.fillText('PADES DIGITAL SIGNATURE', 60, 14);
 
-  // signer name
+  // signer name (CN only, truncated to fit)
   ctx.fillStyle = '#111827';
   ctx.font = 'bold 13px sans-serif';
-  ctx.fillText(signerName, 60, 30);
+  ctx.fillText(fitText(ctx, cnFromDn(signerName), W - 68), 60, 30);
 
   // date
   ctx.fillStyle = '#374151';

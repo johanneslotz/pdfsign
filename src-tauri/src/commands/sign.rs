@@ -182,7 +182,10 @@ where
         }
     }
 
-    // Add /AcroForm to the catalog.
+    // Add sig field to /AcroForm — preserving any pre-existing fields.
+    // Acrobat requires AcroForm to be an indirect object (not inline), and
+    // when re-signing we must append to the existing Fields array instead
+    // of overwriting it (which would invalidate the previous signature's field).
     let catalog_id = doc
         .trailer
         .get(b"Root")
@@ -190,14 +193,36 @@ where
         .and_then(|o| o.as_reference().ok())
         .ok_or("no /Root in trailer")?;
 
-    if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(catalog_id) {
-        cat.set(
-            b"AcroForm",
-            Object::Dictionary(dictionary! {
-                "Fields"   => Object::Array(vec![Object::Reference(sig_field_id)]),
-                "SigFlags" => Object::Integer(3),
-            }),
-        );
+    // Read the existing AcroForm reference (if any) without holding a borrow.
+    let existing_acroform_id: Option<ObjectId> = (|| {
+        if let Ok(Object::Dictionary(cat)) = doc.get_object(catalog_id) {
+            if let Ok(Object::Reference(r)) = cat.get(b"AcroForm") {
+                return Some(*r);
+            }
+        }
+        None
+    })();
+
+    if let Some(af_id) = existing_acroform_id {
+        // Pre-existing referenced AcroForm — append field and upgrade SigFlags.
+        if let Ok(Object::Dictionary(af)) = doc.get_object_mut(af_id) {
+            match af.get_mut(b"Fields") {
+                Ok(Object::Array(arr)) => arr.push(Object::Reference(sig_field_id)),
+                _ => af.set(b"Fields", Object::Array(vec![Object::Reference(sig_field_id)])),
+            }
+            af.set(b"SigFlags", Object::Integer(3));
+        }
+    } else {
+        // No referenced AcroForm yet — create one as a separate indirect object.
+        doc.max_id += 1;
+        let af_id: ObjectId = (doc.max_id, 0);
+        doc.objects.insert(af_id, Object::Dictionary(dictionary! {
+            "Fields"   => Object::Array(vec![Object::Reference(sig_field_id)]),
+            "SigFlags" => Object::Integer(3),
+        }));
+        if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(catalog_id) {
+            cat.set(b"AcroForm", Object::Reference(af_id));
+        }
     }
 
     // ── Step 2: serialise to bytes ───────────────────────────────────────────
