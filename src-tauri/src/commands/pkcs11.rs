@@ -26,8 +26,10 @@ pub fn default_pkcs11_lib() -> String {
     }
     #[cfg(target_os = "macos")]
     {
-        // OpenSC installed via Homebrew or the official installer.
         for p in &[
+            // cv cryptovision eID/smartcard middleware
+            "/Library/cv cryptovision/libcvP11.dylib",
+            // OpenSC installed via the official installer or Homebrew
             "/Library/OpenSC/lib/opensc-pkcs11.so",
             "/opt/homebrew/lib/opensc-pkcs11.so",
             "/usr/local/lib/opensc-pkcs11.so",
