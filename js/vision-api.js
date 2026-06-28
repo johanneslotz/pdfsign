@@ -33,6 +33,7 @@ Return ONLY valid JSON — no markdown, no code fences:
 
 Rules:
 - inputPosition MUST be a percentage 0–100 (e.g. top:25.0 means 25% from the top of the page, left:60.0 means 60% from the left). Do NOT use pixel values.
+- inputPosition is the top-left corner of the blank space meant for the answer. Align left with the start of that blank space — usually flush with the left edge of the field's label/cell on the line below it. Only shift right if the input is clearly meant to sit inline after the label on the same line (e.g. a short blank after "Datum:"). Do not add extra left padding "to look centered".
 - canonicalKey examples: first_name, last_name, date_of_birth, email, phone, address, city, zip, country, company, iban, tax_id, signature
 - Only include blank fields for user input — skip pre-filled text
 - For signature fields use type "signature" and leave suggestedValue empty
