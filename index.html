@@ -171,7 +171,11 @@
         </div>
         <div class="settings-field">
           <label class="settings-label" for="setting-model">Vision Model</label>
-          <select id="setting-model" class="settings-input"></select>
+          <div class="settings-model-row">
+            <select id="setting-model" class="settings-input"></select>
+            <button id="setting-model-refresh" type="button" class="btn-secondary btn-sm" title="Fetch the latest vision-capable models from OpenRouter">Update models</button>
+          </div>
+          <p id="setting-model-refresh-status" class="settings-hint"></p>
         </div>
       </div>
 

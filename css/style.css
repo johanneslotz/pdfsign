@@ -931,6 +931,19 @@ textarea.form-field-overlay { resize: none; }
   background: var(--surface);
 }
 
+.settings-model-row {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-model-row .settings-input {
+  flex: 1;
+}
+
+.settings-model-row .btn-sm {
+  flex-shrink: 0;
+}
+
 /* ── AI Conversation log ── */
 .ai-conversation {
   border-top: 1px solid var(--border);
