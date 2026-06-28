@@ -329,13 +329,27 @@ export class PDFViewer {
 
   getFormData() {
     const result = {};
-    this.container.querySelectorAll('.form-field-overlay').forEach(el => {
+    this.container.querySelectorAll('.form-field-overlay:not(.detected-field-overlay)').forEach(el => {
       const pn = parseInt(el.dataset.pageNum);
       if (!result[pn]) result[pn] = [];
       const value = el.type === 'checkbox' ? (el.checked ? 'Yes' : 'Off') : el.value;
       result[pn].push({ fieldName: el.dataset.fieldName, fieldType: el.dataset.fieldType, value });
     });
     return result;
+  }
+
+  // AI-detected fields with no matching AcroForm widget aren't real form fields —
+  // they get drawn as free text onto the page instead of written via pdf-lib's form API.
+  getDetectedFieldData() {
+    return Array.from(this.container.querySelectorAll('.detected-field-overlay'))
+      .filter(el => el.dataset.fieldType === 'checkbox' ? el.checked : el.value.trim())
+      .map(el => ({
+        pageNum:  parseInt(el.dataset.pageNum),
+        pdfX:     parseFloat(el.dataset.pdfX),
+        pdfY:     parseFloat(el.dataset.pdfY),
+        text:     el.dataset.fieldType === 'checkbox' ? 'X' : el.value,
+        fontSize: parseInt(getComputedStyle(el).fontSize) || 12,
+      }));
   }
 
   enablePlacementMode() {
@@ -398,6 +412,8 @@ export class PDFViewer {
     el.dataset.fieldName = canonicalKey;
     el.dataset.fieldType = fieldType;
     el.dataset.pageNum   = pageNum;
+    el.dataset.pdfX      = canvasX / info.scale;
+    el.dataset.pdfY      = info.naturalVP.height - canvasY / info.scale;
     el.title = label;
     if (!isCheckbox) el.placeholder = label;
 

@@ -288,7 +288,7 @@ async function savePDF() {
 
   await editor.applyFormData(viewer.getFormData());
   await editor.applySignatures(viewer.getSignaturePlacements());
-  editor.applyFreeText(viewer.getFreeTextAnnotations());
+  editor.applyFreeText([...viewer.getFreeTextAnnotations(), ...viewer.getDetectedFieldData()]);
 
   const bytes    = await editor.getBytes();
   const blob     = new Blob([bytes], { type: 'application/pdf' });
