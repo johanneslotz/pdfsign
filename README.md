@@ -7,12 +7,37 @@ A PDF signing app built entirely through vibe coding with [Claude Code](https://
 ## Features
 
 - **Open & view PDFs** — drag-and-drop or file picker, multi-page rendering via PDF.js
-- **Handwritten signatures** — draw on a canvas, import a PNG, or re-use saved signatures
+- **Handwritten signatures** — draw on a canvas, import a photo or scan, or re-use saved signatures
+- **Photo import** — crop, rotate and de-skew a snapshot of a signature, then lift the ink off the
+  paper onto a transparent background with an adjustable threshold (see below)
 - **Free-text annotations** — click anywhere on a page to add typed text
 - **AcroForm support** — existing PDF form fields are rendered as editable overlays
 - **Cryptographic signing** — PAdES B-B signatures via smartcard (desktop app only)
 - **AI form fill** — vision-based assistant that reads the PDF and suggests field values
 - **Works offline** — pure static frontend, no server required for the web version
+
+## Importing a signature from a photo
+
+Open **Signature → Import → PNG / JPG** and pick a photo or scan. Instead of stamping the
+picture in as-is, an editor opens:
+
+- **Drag the four corners** around the signature to crop, and to pull a phone snapshot
+  square again — the corners map to the output rectangle, so a photo taken at an angle
+  comes out flat. The filled corner marks the top-left of the result.
+- **⟲ / ⟳ 90°** re-orient a sideways scan, and **Straighten** takes out a small tilt.
+- **Threshold** decides what counts as ink. It starts on a value detected from the image;
+  **Auto** returns to it.
+- **Despeckle** drops shapes smaller than the slider allows, which clears paper grain and dust.
+- **Ink** defaults to the pen colour measured from the photo, and can be overridden or forced
+  to black.
+
+The result is saved as a transparent PNG, so only the strokes are stamped onto the PDF — no
+white box, no page background. **Use unprocessed** skips all of this and stores the image as-is.
+
+Robustness comes from thresholding *relative paper brightness* rather than raw pixel values:
+the paper's own illumination is estimated and divided out first, so shadows and colour casts
+don't shift the cut-off, and coloured ink is scored on whichever channel it darkens most.
+See `js/signature-image.js`.
 
 ## Download
 
@@ -174,6 +199,8 @@ pdfsign/
 │   ├── pdf-viewer.js   # PDF.js rendering + overlay management
 │   ├── pdf-editor.js   # pdf-lib write-back (annotations, signatures)
 │   ├── signature-pad.js
+│   ├── signature-image.js   # photo → transparent signature (threshold, despeckle, warp)
+│   ├── signature-import.js  # crop / rotate / threshold editor shown on import
 │   ├── ai-assistant.js # Vision API form fill
 │   └── sign/
 │       ├── orchestrator.js   # Tauri detection + dispatch

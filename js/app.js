@@ -1,5 +1,6 @@
 import { saveSignature, getSignatures, deleteSignature } from './storage.js';
 import { SignaturePad }   from './signature-pad.js';
+import { SignatureImportEditor } from './signature-import.js';
 import { PDFViewer }      from './pdf-viewer.js';
 import { PDFEditor }      from './pdf-editor.js';
 import { FormMemory }     from './form-memory.js';
@@ -15,12 +16,18 @@ let pdfBytes = null;
 let selectedSigDataUrl = null;
 let placementBanner    = null;
 let assistant          = null;
+let importEditor       = null;
 
 // ── Init ────────────────────────────────────────────────────────────────────
 
 function init() {
   viewer = new PDFViewer(document.getElementById('pdf-pages'));
   sigPad = new SignaturePad(document.getElementById('sig-canvas'));
+
+  importEditor = new SignatureImportEditor({
+    onSave: async dataUrl => { await saveSignature(dataUrl); await renderSavedSigs(); },
+    toast,
+  });
 
   // ── AI assistant & settings ──────────────────────────────────────────────
   const formMemory = new FormMemory();
@@ -170,6 +177,8 @@ function openSigModal() {
 
 function closeSigModal() {
   document.getElementById('sig-modal').classList.add('hidden');
+  // Closing mid-import abandons the queue and restores the draw view.
+  if (importEditor) importEditor.dismiss();
 }
 
 async function onSaveSig() {
@@ -311,14 +320,10 @@ function setColor(hex) {
 async function onImportPng(e) {
   const files = Array.from(e.target.files);
   if (!files.length) return;
-  for (const file of files) {
-    const dataUrl = await readFileAsDataUrl(file);
-    const png     = await normaliseImageToPng(dataUrl);
-    await saveSignature(png);
-  }
   e.target.value = '';
-  await renderSavedSigs();
-  toast(`${files.length} image${files.length > 1 ? 's' : ''} imported`);
+  // Photos and scans go through the crop / threshold editor rather than being
+  // stamped in as-is with their paper background.
+  await importEditor.start(files);
 }
 
 async function onImportJson(e) {
@@ -357,29 +362,6 @@ function readFileAsText(file) {
   });
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload  = () => resolve(r.result);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
-
-function normaliseImageToPng(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width  = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
-    };
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
-}
 
 // ── Download helper ──────────────────────────────────────────────────────────
 

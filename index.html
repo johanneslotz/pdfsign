@@ -115,6 +115,7 @@
         </button>
       </div>
 
+      <div id="sig-draw-view">
       <div class="sig-toolbar">
         <label class="label" for="sig-linewidth" style="margin-bottom:0">Width</label>
         <input type="range" id="sig-linewidth" min="1" max="12" value="2" step="0.5">
@@ -142,12 +143,71 @@
         <label for="sig-json-input" class="btn-secondary btn-label">JSON backup</label>
         <button id="sig-export" class="btn-secondary" style="margin-left:auto">Export all</button>
       </div>
-      <input type="file" id="sig-png-input"  accept="image/png,image/jpeg,image/webp" class="file-input-hidden">
+      <input type="file" id="sig-png-input"  accept="image/png,image/jpeg,image/webp" multiple class="file-input-hidden">
       <input type="file" id="sig-json-input" accept=".json"                            class="file-input-hidden">
 
       <div class="saved-sigs-section">
         <p class="label">Saved signatures — tap to select</p>
         <div id="saved-sigs" class="saved-sigs"></div>
+      </div>
+      </div><!-- /#sig-draw-view -->
+
+      <!-- Imported photo / scan editor -->
+      <div id="sig-import-view" class="hidden">
+        <div class="imgedit-head">
+          <strong id="imgedit-filename"></strong>
+          <span id="imgedit-progress" class="imgedit-progress"></span>
+          <span id="imgedit-busy" class="imgedit-busy hidden">Working…</span>
+        </div>
+
+        <div class="imgedit-panes">
+          <div class="imgedit-pane">
+            <p class="label">Source — drag the corners around the signature</p>
+            <div class="imgedit-stage">
+              <canvas id="imgedit-src"></canvas>
+              <canvas id="imgedit-overlay"></canvas>
+            </div>
+            <div class="imgedit-row">
+              <button id="imgedit-rot-ccw" class="btn-secondary btn-sm" title="Rotate 90° left">⟲&nbsp;90°</button>
+              <button id="imgedit-rot-cw"  class="btn-secondary btn-sm" title="Rotate 90° right">⟳&nbsp;90°</button>
+              <label class="label" for="imgedit-fine">Straighten</label>
+              <input type="range" id="imgedit-fine" min="-15" max="15" step="0.5" value="0">
+              <span id="imgedit-fine-val" class="imgedit-val">0°</span>
+            </div>
+          </div>
+
+          <div class="imgedit-pane">
+            <p class="label">Result — transparent, ready to stamp</p>
+            <div class="imgedit-stage imgedit-result">
+              <canvas id="imgedit-out"></canvas>
+            </div>
+            <div class="imgedit-row">
+              <label class="label" for="imgedit-threshold">Threshold</label>
+              <input type="range" id="imgedit-threshold" min="1" max="99" step="1" value="30">
+              <span id="imgedit-threshold-val" class="imgedit-val">30%</span>
+              <button id="imgedit-auto" class="btn-ghost btn-sm" title="Reset to the detected threshold">Auto</button>
+            </div>
+            <div class="imgedit-row">
+              <label class="label" for="imgedit-despeckle">Despeckle</label>
+              <input type="range" id="imgedit-despeckle" min="0" max="100" step="1" value="25">
+              <span id="imgedit-despeckle-val" class="imgedit-val">25</span>
+            </div>
+            <div class="imgedit-row">
+              <label class="label" for="imgedit-ink">Ink</label>
+              <input type="color" id="imgedit-ink" value="#1e293b" title="Ink colour">
+              <button id="imgedit-ink-auto"  class="btn-ghost btn-sm">From photo</button>
+              <button id="imgedit-ink-black" class="btn-ghost btn-sm">Black</button>
+            </div>
+            <p id="imgedit-stats" class="imgedit-stats"></p>
+          </div>
+        </div>
+
+        <div class="modal-actions imgedit-actions">
+          <button id="imgedit-raw"    class="btn-ghost" title="Save the image without any processing">Use unprocessed</button>
+          <button id="imgedit-reset"  class="btn-ghost">Reset</button>
+          <button id="imgedit-cancel" class="btn-secondary">Cancel</button>
+          <button id="imgedit-save"   class="btn-primary">Save Signature</button>
+        </div>
       </div>
     </div>
   </div>

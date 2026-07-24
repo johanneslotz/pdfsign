@@ -5,6 +5,7 @@ const fs   = require('fs');
 const SAMPLE_PDF    = path.join(__dirname, '../fixtures/sample.pdf');
 const FORM_PDF      = path.join(__dirname, '../fixtures/form.pdf');
 const SIGNATURE_PNG = path.join(__dirname, '../fixtures/signature.png');
+const PHOTO_PNG     = path.join(__dirname, '../fixtures/signature-photo.png');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,65 @@ async function saveSignature(page) {
   await drawSignature(page);
   await page.click('#sig-save');
   await expect(page.locator('.sig-item').first()).toBeVisible();
+}
+
+// Opens the signature modal and feeds it an image, landing in the adjust editor.
+async function openImportEditor(page, file = PHOTO_PNG) {
+  await page.click('#btn-signature');
+  await page.locator('#sig-png-input').setInputFiles(file);
+  await expect(page.locator('#sig-import-view')).not.toHaveClass(/hidden/);
+  // stats text is only written once a full (non-drag) render has completed
+  await expect(page.locator('#imgedit-stats')).not.toBeEmpty({ timeout: 15000 });
+}
+
+// Drags the four selection corners inwards onto the sheet of paper, which is
+// what a user does to leave the table top out of the crop.
+async function cropToPaper(page) {
+  const overlay = page.locator('#imgedit-overlay');
+  await overlay.scrollIntoViewIfNeeded();
+
+  const corners = [
+    [[0.04, 0.04], [0.20, 0.20]],   // top-left
+    [[0.96, 0.04], [0.80, 0.22]],   // top-right
+    [[0.96, 0.96], [0.80, 0.80]],   // bottom-right
+    [[0.04, 0.96], [0.20, 0.78]],   // bottom-left
+  ];
+  for (const [from, to] of corners) {
+    const box = await overlay.boundingBox();
+    const at  = (fx, fy) => [box.x + box.width * fx, box.y + box.height * fy];
+    await page.mouse.move(...at(...from));
+    await page.mouse.down();
+    await page.mouse.move(...at(...to), { steps: 6 });
+    await page.mouse.up();
+  }
+  await expect(page.locator('#imgedit-stats')).not.toBeEmpty({ timeout: 15000 });
+}
+
+// Reads a saved signature back out of the gallery and measures its pixels.
+async function measureSavedSignature(page, index = 0) {
+  return page.evaluate(async i => {
+    const img = new Image();
+    img.src = document.querySelectorAll('.sig-item img')[i].src;
+    await img.decode();
+
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0);
+    const { data } = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+
+    let opaque = 0, clear = 0, r = 0, g = 0, b = 0;
+    for (let p = 0; p < data.length; p += 4) {
+      if (data[p + 3] > 200) { opaque++; r += data[p]; g += data[p + 1]; b += data[p + 2]; }
+      else if (data[p + 3] === 0) clear++;
+    }
+    const alphaAt = (x, y) => data[(y * c.width + x) * 4 + 3];
+    return {
+      width: c.width, height: c.height, opaque, clear,
+      ink: opaque ? [r / opaque, g / opaque, b / opaque].map(Math.round) : null,
+      corners: [alphaAt(0, 0), alphaAt(c.width - 1, 0),
+                alphaAt(0, c.height - 1), alphaAt(c.width - 1, c.height - 1)],
+    };
+  }, index);
 }
 
 async function selectFirstSignature(page) {
@@ -127,8 +187,8 @@ test.describe('Signature import / export', () => {
   });
 
   test('imports a PNG as a signature', async ({ page }) => {
-    await page.click('#btn-signature');
-    await page.locator('#sig-png-input').setInputFiles(SIGNATURE_PNG);
+    await openImportEditor(page, SIGNATURE_PNG);
+    await page.click('#imgedit-save');
     await expect(page.locator('.sig-item').first()).toBeVisible({ timeout: 5000 });
   });
 
@@ -154,6 +214,135 @@ test.describe('Signature import / export', () => {
     // Re-import from the downloaded JSON (input is inside the already-open modal)
     await page.locator('#sig-json-input').setInputFiles(dlPath);
     await expect(page.locator('.sig-item').first()).toBeVisible({ timeout: 5000 });
+  });
+});
+
+test.describe('Photo import editor', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await loadPDF(page);
+  });
+
+  test('opens the editor instead of importing the photo as-is', async ({ page }) => {
+    await openImportEditor(page);
+    await expect(page.locator('#sig-draw-view')).toHaveClass(/hidden/);
+    await expect(page.locator('#sig-item')).toHaveCount(0);
+    await expect(page.locator('#imgedit-filename')).toHaveText('signature-photo.png');
+  });
+
+  test('extracts ink onto a transparent background', async ({ page }) => {
+    await openImportEditor(page);
+    await cropToPaper(page);
+    await page.click('#imgedit-save');
+    await expect(page.locator('.sig-item').first()).toBeVisible({ timeout: 15000 });
+
+    const sig = await measureSavedSignature(page);
+    // The wooden table and the paper are gone: corners fully transparent and
+    // most of the image is empty, with only the strokes left behind.
+    expect(sig.corners).toEqual([0, 0, 0, 0]);
+    expect(sig.clear).toBeGreaterThan(sig.opaque * 2);
+    expect(sig.opaque).toBeGreaterThan(500);
+    // ink colour is sampled from the photo, so the blue pen stays blue
+    expect(sig.ink[2]).toBeGreaterThan(sig.ink[0] + 30);
+  });
+
+  test('threshold slider changes the extracted result', async ({ page }) => {
+    await openImportEditor(page);
+    const snapshot = () => page.evaluate(() =>
+      document.getElementById('imgedit-out').toDataURL());
+
+    const before = await snapshot();
+    await page.locator('#imgedit-threshold').fill('90');
+    await page.locator('#imgedit-threshold').dispatchEvent('input');
+    await expect(page.locator('#imgedit-threshold-val')).toHaveText('90%');
+    expect(await snapshot()).not.toBe(before);
+
+    // Auto puts it back on the detected threshold
+    await page.click('#imgedit-auto');
+    await expect(page.locator('#imgedit-threshold-val')).not.toHaveText('90%');
+  });
+
+  test('despeckle removes the dust specks', async ({ page }) => {
+    await openImportEditor(page);
+    const removed = async () => {
+      const text = await page.locator('#imgedit-stats').textContent();
+      return parseInt(/(\d+) speck/.exec(text)[1], 10);
+    };
+    expect(await removed()).toBeGreaterThan(10);
+
+    await page.locator('#imgedit-despeckle').fill('0');
+    await page.locator('#imgedit-despeckle').dispatchEvent('input');
+    await expect(page.locator('#imgedit-despeckle-val')).toHaveText('0');
+    expect(await removed()).toBe(0);
+  });
+
+  test('rotating 90° flips the result orientation', async ({ page }) => {
+    await openImportEditor(page);
+    const size = () => page.evaluate(() => {
+      const c = document.getElementById('imgedit-out');
+      return c.width / c.height;
+    });
+
+    const landscape = await size();
+    expect(landscape).toBeGreaterThan(1);
+
+    await page.click('#imgedit-rot-cw');
+    await expect(page.locator('#imgedit-stats')).not.toBeEmpty();
+    expect(await size()).toBeLessThan(1);
+  });
+
+  test('straighten slider reports its angle', async ({ page }) => {
+    await openImportEditor(page);
+    await page.locator('#imgedit-fine').fill('-4');
+    await page.locator('#imgedit-fine').dispatchEvent('input');
+    await expect(page.locator('#imgedit-fine-val')).toHaveText('-4°');
+  });
+
+  test('dragging a corner re-crops the result', async ({ page }) => {
+    await openImportEditor(page);
+    const snapshot = () => page.evaluate(() =>
+      document.getElementById('imgedit-out').toDataURL());
+
+    const before = await snapshot();
+    await cropToPaper(page);
+    expect(await snapshot()).not.toBe(before);
+  });
+
+  test('keeps the ink colour even when the crop catches the table', async ({ page }) => {
+    // The default selection includes the wooden background — a single huge
+    // edge-touching blob that must not drag the sampled ink colour brown.
+    await openImportEditor(page);
+    const ink = await page.locator('#imgedit-ink').inputValue();
+    const [r, , b] = [1, 3, 5].map(i => parseInt(ink.slice(i, i + 2), 16));
+    expect(b).toBeGreaterThan(r + 30);
+  });
+
+  test('cancel discards the photo without saving', async ({ page }) => {
+    await openImportEditor(page);
+    await page.click('#imgedit-cancel');
+    await expect(page.locator('#sig-draw-view')).not.toHaveClass(/hidden/);
+    await expect(page.locator('.no-sigs')).toBeVisible();
+  });
+
+  test('"use unprocessed" saves the original image untouched', async ({ page }) => {
+    await openImportEditor(page);
+    await page.click('#imgedit-raw');
+    await expect(page.locator('.sig-item').first()).toBeVisible({ timeout: 15000 });
+
+    const sig = await measureSavedSignature(page);
+    expect(sig.clear).toBe(0);           // nothing was made transparent
+    expect(sig.width).toBe(640);
+  });
+
+  test('handles several photos one after another', async ({ page }) => {
+    await page.click('#btn-signature');
+    await page.locator('#sig-png-input').setInputFiles([PHOTO_PNG, PHOTO_PNG]);
+    await expect(page.locator('#imgedit-progress')).toHaveText('1 of 2');
+    await page.click('#imgedit-save');
+    await expect(page.locator('#imgedit-progress')).toHaveText('2 of 2', { timeout: 15000 });
+    await page.click('#imgedit-save');
+    await expect(page.locator('#sig-draw-view')).not.toHaveClass(/hidden/, { timeout: 15000 });
+    await expect(page.locator('.sig-item')).toHaveCount(2);
   });
 });
 
