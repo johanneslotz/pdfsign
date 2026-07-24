@@ -149,24 +149,62 @@ export class PDFViewer {
     this._makeDraggableInput(input, info);
   }
 
+  /**
+   * A text overlay is both draggable and editable, so the gesture itself has
+   * to say which one it is: a press that travels is a drag, a press that stays
+   * put is a click into the text.
+   *
+   * Focus cannot be the test. A freshly placed overlay is focused so the user
+   * can type, and the browser focuses it again on every mousedown, so keying
+   * off focus leaves the overlay permanently unmovable.
+   */
   _makeDraggableInput(el, info) {
-    let ox, oy, ol, ot;
-    // Drag starts only on pointerdown on the element itself (not while typing)
+    const DRAG_SLOP = 4;   // px of travel before a press counts as a drag
+    let drag = null;
+
     el.addEventListener('pointerdown', e => {
-      if (document.activeElement === el) return; // let clicks through when focused
-      e.preventDefault();
-      ol = parseInt(el.style.left); ot = parseInt(el.style.top);
-      ox = e.clientX; oy = e.clientY;
-      el.setPointerCapture(e.pointerId);
+      if (e.button) return;   // primary button (or touch/pen) only
+      drag = {
+        id: e.pointerId, moved: false,
+        ox: e.clientX, oy: e.clientY,
+        ol: parseFloat(el.style.left) || 0,
+        ot: parseFloat(el.style.top)  || 0,
+      };
     });
+
     el.addEventListener('pointermove', e => {
-      if (!e.buttons) return;
-      if (document.activeElement === el) return;
-      el.style.left = (ol + e.clientX - ox) + 'px';
-      el.style.top  = (ot + e.clientY - oy) + 'px';
-      el.dataset.pdfX = (parseInt(el.style.left))  / info.scale;
-      el.dataset.pdfY = info.naturalVP.height - (parseInt(el.style.top)) / info.scale;
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.ox, dy = e.clientY - drag.oy;
+      if (!drag.moved) {
+        if (Math.hypot(dx, dy) < DRAG_SLOP) return;
+        drag.moved = true;
+        el.blur();                          // don't select the text while dragging it
+        el.setPointerCapture(e.pointerId);
+      }
+      this._positionOverlay(el, info, drag.ol + dx, drag.ot + dy);
     });
+
+    const end = e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const moved = drag.moved;
+      drag = null;
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      // A drag ends with a click event; swallow it so the overlay doesn't drop
+      // straight back into edit mode.
+      if (moved) el.addEventListener('click', ev => {
+        ev.preventDefault(); ev.stopPropagation();
+      }, { once: true, capture: true });
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+  }
+
+  /** Move an overlay to a canvas position, keeping its PDF coordinates in step. */
+  _positionOverlay(el, info, left, top) {
+    el.style.left = left + 'px';
+    el.style.top  = top + 'px';
+    el.dataset.pdfX = left / info.scale;
+    el.dataset.pdfY = info.naturalVP.height - top / info.scale;
   }
 
   getFreeTextAnnotations() {

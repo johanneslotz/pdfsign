@@ -218,6 +218,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .free-text-overlay:not(:focus) {
   cursor: move;
+  touch-action: none;   /* the overlay is dragged, not scrolled */
 }
 
 /* ── Form field overlays ── */

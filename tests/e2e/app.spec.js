@@ -412,6 +412,51 @@ test.describe('Free-text annotations', () => {
     await page.locator('.free-text-overlay').fill('Hello PDF');
     await expect(page.locator('.free-text-overlay')).toHaveValue('Hello PDF');
   });
+
+  // A freshly typed overlay is still focused — the state it is always in when
+  // the user reaches to move it.
+  test('drags a placed text overlay the full distance', async ({ page }) => {
+    await page.click('#btn-add-text');
+    const wrapper = page.locator('.page-wrapper').first();
+    const box     = await wrapper.boundingBox();
+    await page.mouse.click(box.x + 100, box.y + 150);
+
+    const overlay = page.locator('.free-text-overlay');
+    await overlay.fill('Drag me');
+    await expect(overlay).toBeFocused();
+
+    const before = await overlay.boundingBox();
+    await page.mouse.move(before.x + 20, before.y + before.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(before.x + 20 + 120, before.y + before.height / 2 + 60, { steps: 10 });
+    await page.mouse.up();
+
+    // The whole gesture must land, not just the pixels before focus kicked in.
+    const after = await overlay.boundingBox();
+    expect(after.x - before.x).toBeGreaterThan(110);
+    expect(after.y - before.y).toBeGreaterThan(50);
+
+    // PDF coordinates follow the move, so the text saves where it is shown.
+    const pdf = await overlay.evaluate(el => [+el.dataset.pdfX, +el.dataset.pdfY]);
+    expect(pdf[0]).toBeGreaterThan(100);
+    // Dragging leaves edit mode rather than dropping straight back into it.
+    await expect(overlay).not.toBeFocused();
+  });
+
+  test('clicking a placed text overlay puts it back into edit mode', async ({ page }) => {
+    await page.click('#btn-add-text');
+    const wrapper = page.locator('.page-wrapper').first();
+    const box     = await wrapper.boundingBox();
+    await page.mouse.click(box.x + 100, box.y + 150);
+
+    const overlay = page.locator('.free-text-overlay');
+    await overlay.fill('Edit me');
+    await page.locator('#pdf-pages').click({ position: { x: 5, y: 5 } });
+    await expect(overlay).not.toBeFocused();
+
+    await overlay.click();
+    await expect(overlay).toBeFocused();
+  });
 });
 
 test.describe('Save PDF', () => {
