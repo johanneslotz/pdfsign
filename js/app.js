@@ -65,11 +65,8 @@ function init() {
   document.getElementById('sig-export').onclick         = exportSignatures;
   document.getElementById('error-banner-close').onclick = hideError;
 
-  for (const id of ['sig-png-input', 'sig-json-input']) {
-    const el = document.getElementById(id);
-    el.addEventListener('change', id === 'sig-png-input' ? onImportPng : onImportJson);
-    el.addEventListener('input',  id === 'sig-png-input' ? onImportPng : onImportJson);
-  }
+  document.getElementById('sig-png-input').addEventListener('change', onImportPng);
+  document.getElementById('sig-json-input').addEventListener('change', onImportJson);
 
   const colorPicker = document.getElementById('sig-color');
   colorPicker.oninput = () => setColor(colorPicker.value);
@@ -94,7 +91,14 @@ function setupDropZone() {
     e.preventDefault();
     zone.classList.remove('drag-over');
     const file = e.dataTransfer.files[0];
-    if (file?.type === 'application/pdf') loadFile(file);
+    if (!file) return;
+    // Some sources (cloud-drive downloads, certain OS file managers) don't
+    // set a MIME type on drag data — fall back to the extension.
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+      loadFile(file);
+    } else {
+      showError(`"${file.name}" doesn't look like a PDF.`);
+    }
   });
 }
 
@@ -291,19 +295,33 @@ function onSignaturePlaced(pageNum, pdfX, pdfY, pageInfo) {
 async function savePDF() {
   if (!editor) return;
   toast('Saving…');
+  const saveBtn = document.getElementById('btn-save');
+  saveBtn.disabled = true;
 
-  editor = new PDFEditor();
-  await editor.load(pdfBytes.slice(0));
+  // Re-parse from the original bytes rather than mutating the existing
+  // editor, so a failed save (or clicking Save twice) can't compound edits
+  // onto an already-annotated document.
+  try {
+    const fresh = new PDFEditor();
+    await fresh.load(pdfBytes.slice(0));
 
-  await editor.applyFormData(viewer.getFormData());
-  await editor.applySignatures(viewer.getSignaturePlacements());
-  editor.applyFreeText([...viewer.getFreeTextAnnotations(), ...viewer.getDetectedFieldData()]);
+    await fresh.applyFormData(viewer.getFormData());
+    await fresh.applySignatures(viewer.getSignaturePlacements());
+    fresh.applyFreeText([...viewer.getFreeTextAnnotations(), ...viewer.getDetectedFieldData()]);
 
-  const bytes    = await editor.getBytes();
-  const blob     = new Blob([bytes], { type: 'application/pdf' });
-  const origName = document.getElementById('file-name').textContent.replace(/\.pdf$/i, '');
-  triggerDownload(URL.createObjectURL(blob), `${origName}_signed.pdf`);
-  toast('PDF downloaded');
+    const bytes = await fresh.getBytes();
+    editor = fresh;   // only replace the live editor once the save succeeded
+
+    const blob     = new Blob([bytes], { type: 'application/pdf' });
+    const origName = document.getElementById('file-name').textContent.replace(/\.pdf$/i, '');
+    triggerDownload(URL.createObjectURL(blob), `${origName}_signed.pdf`);
+    toast('PDF downloaded');
+  } catch (err) {
+    showError('Could not save the PDF: ' + pdfErrorMessage(err), err);
+    toast('Save failed');
+  } finally {
+    saveBtn.disabled = false;
+  }
 }
 
 // ── Signature color ──────────────────────────────────────────────────────────
@@ -329,9 +347,9 @@ async function onImportPng(e) {
 async function onImportJson(e) {
   const file = e.target.files[0];
   if (!file) return;
+  e.target.value = '';
   try {
     const text = await readFileAsText(file);
-    e.target.value = '';
     const data = JSON.parse(text);
     const sigs  = Array.isArray(data) ? data : data.signatures;
     if (!Array.isArray(sigs)) throw new Error('Unrecognised format');

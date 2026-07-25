@@ -1,3 +1,29 @@
+// Splits an identifier into lowercase word tokens, treating camelCase
+// boundaries the same as underscores/spaces/dashes.
+export function tokenize(s) {
+  return String(s || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/**
+ * True when the shorter token list is a whole-word subset of the longer one.
+ *
+ * This is deliberately word-based rather than substring-based: canonicalKey
+ * "name" must not match an AcroForm field called "surname" just because the
+ * plain text "name" appears inside it — "surname" tokenizes to one word that
+ * isn't "name", so the sets don't overlap. A field genuinely composed of that
+ * word, like "first_name" or "companyName", still matches.
+ */
+export function tokensMatch(a, b) {
+  if (!a.length || !b.length) return false;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  const longerSet = new Set(longer);
+  return shorter.every(t => longerSet.has(t));
+}
+
 export class AIAssistant {
   constructor({ viewer, formMemory, visionApi, toast }) {
     this.viewer     = viewer;
@@ -289,11 +315,12 @@ export class AIAssistant {
   }
 
   _matchAcroField(acroFields, vf) {
-    const key = vf.canonicalKey.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const lbl = vf.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const keyTokens = tokenize(vf.canonicalKey);
+    const lblTokens = tokenize(vf.label);
     for (const a of acroFields) {
-      const name = a.fieldName.replace(/[^a-z0-9]/g, '');
-      if (name === key || name === lbl || name.includes(key) || key.includes(name)) {
+      const nameTokens = tokenize(a.fieldName);
+      if (!nameTokens.length) continue;
+      if (tokensMatch(nameTokens, keyTokens) || tokensMatch(nameTokens, lblTokens)) {
         return a.el;
       }
     }

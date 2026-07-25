@@ -131,6 +131,64 @@ test.describe('Loading PDF', () => {
     await loadPDF(page, FORM_PDF);
     await expect(page.locator('.form-field-overlay').first()).toBeVisible();
   });
+
+  // Simulates dropping a File with the given name/type/bytes onto the drop zone —
+  // some sources (cloud-drive downloads, some OS file pickers) hand over a File
+  // with an empty MIME type, so the app must fall back to the .pdf extension.
+  async function dropFile(page, { name, type, bytes }) {
+    // The service worker's install → controllerchange handler reloads the
+    // page once on first visit; wait it out first or the drop races a reload.
+    await page.waitForLoadState('networkidle');
+    const b64 = Buffer.from(bytes).toString('base64');
+    await page.evaluate(({ name, type, b64 }) => {
+      const dt   = new DataTransfer();
+      const file = new File([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], name, { type });
+      dt.items.add(file);
+      const event = new DragEvent('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'dataTransfer', { value: dt });
+      document.getElementById('drop-zone').dispatchEvent(event);
+    }, { name, type, b64 });
+  }
+
+  test('accepts a dropped PDF with no MIME type via its extension', async ({ page }) => {
+    const bytes = fs.readFileSync(SAMPLE_PDF);
+    await dropFile(page, { name: 'contract.pdf', type: '', bytes });
+    await expect(page.locator('.page-wrapper').first()).toBeVisible({ timeout: 15000 });
+  });
+
+  test('rejects a dropped non-PDF file with an error message', async ({ page }) => {
+    await dropFile(page, { name: 'photo.jpg', type: 'image/jpeg', bytes: Buffer.from([1, 2, 3]) });
+    await expect(page.locator('#error-banner')).toBeVisible();
+    await expect(page.locator('#error-banner-msg')).toContainText('photo.jpg');
+    await expect(page.locator('#drop-zone')).toBeVisible();
+  });
+});
+
+test.describe('Storage', () => {
+  test('reuses a single IndexedDB connection across calls', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const opens = await page.evaluate(async () => {
+      let count = 0;
+      const realOpen = indexedDB.open.bind(indexedDB);
+      indexedDB.open = (...args) => { count++; return realOpen(...args); };
+
+      const { saveSignature, getSignatures, deleteSignature } = await import('/js/storage.js');
+      const id = await saveSignature('data:image/png;base64,AA==');
+      await getSignatures();
+      await deleteSignature(id);
+      await getSignatures();
+
+      indexedDB.open = realOpen;
+      return count;
+    });
+
+    // At most one open across 4 storage calls — 0 if the app's own init
+    // already opened (and cached) the connection first, 1 if this was the
+    // first call. Unmemoized, each of the 4 calls opens its own connection.
+    expect(opens).toBeLessThanOrEqual(1);
+  });
 });
 
 test.describe('Signature drawing', () => {
@@ -214,6 +272,24 @@ test.describe('Signature import / export', () => {
     // Re-import from the downloaded JSON (input is inside the already-open modal)
     await page.locator('#sig-json-input').setInputFiles(dlPath);
     await expect(page.locator('.sig-item').first()).toBeVisible({ timeout: 5000 });
+  });
+
+  // A single "change" event must import each signature exactly once — the
+  // file input previously also fired on "input", double-saving every restore.
+  test('importing a JSON backup does not duplicate signatures', async ({ page }) => {
+    await page.click('#btn-signature');
+    const jsonPath = path.join(__dirname, '../fixtures/one-signature.json');
+    fs.writeFileSync(jsonPath, JSON.stringify({
+      signatures: [{ dataUrl: 'data:image/png;base64,' +
+        fs.readFileSync(SIGNATURE_PNG).toString('base64') }],
+    }));
+
+    await page.locator('#sig-json-input').setInputFiles(jsonPath);
+    await expect(page.locator('.sig-item').first()).toBeVisible({ timeout: 5000 });
+    await page.waitForTimeout(500);   // let any duplicate handler fire
+    await expect(page.locator('.sig-item')).toHaveCount(1);
+
+    fs.unlinkSync(jsonPath);
   });
 });
 
@@ -343,6 +419,37 @@ test.describe('Photo import editor', () => {
     await page.click('#imgedit-save');
     await expect(page.locator('#sig-draw-view')).not.toHaveClass(/hidden/, { timeout: 15000 });
     await expect(page.locator('.sig-item')).toHaveCount(2);
+  });
+});
+
+test.describe('AI form field matching', () => {
+  // tokenize/tokensMatch are pure functions — exercised in-page since the app
+  // ships as ES modules with no separate unit-test runner.
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');   // past the SW install reload
+  });
+
+  async function matches(page, fieldName, canonicalKey) {
+    return page.evaluate(async ([fieldName, canonicalKey]) => {
+      const { tokenize, tokensMatch } = await import('/js/ai-assistant.js');
+      return tokensMatch(tokenize(fieldName), tokenize(canonicalKey));
+    }, [fieldName, canonicalKey]);
+  }
+
+  test('does not match "name" against an unrelated field containing it as a substring', async ({ page }) => {
+    expect(await matches(page, 'surname', 'name')).toBe(false);
+    expect(await matches(page, 'username', 'name')).toBe(false);
+    expect(await matches(page, 'firstname', 'name')).toBe(false);
+    // Contrast: a field where "name" is a genuine separate word still matches.
+    expect(await matches(page, 'company_name_confirmation', 'name')).toBe(true);
+  });
+
+  test('still matches a field genuinely composed of the same words', async ({ page }) => {
+    expect(await matches(page, 'first_name', 'first_name')).toBe(true);
+    expect(await matches(page, 'txtFirstName', 'first_name')).toBe(true);
+    expect(await matches(page, 'field_first_name', 'first_name')).toBe(true);
+    expect(await matches(page, 'name', 'name')).toBe(true);
   });
 });
 
@@ -506,5 +613,26 @@ test.describe('Save PDF', () => {
     ]);
     const bytes = fs.readFileSync(await dl.path());
     expect(bytes.slice(0, 4).toString()).toBe('%PDF');
+  });
+
+  test('shows an error and recovers when saving fails', async ({ page }) => {
+    // Force pdf-lib's PNG embedding to fail, simulating any mid-save error.
+    await page.evaluate(() => {
+      PDFLib.PDFDocument.prototype.embedPng = async () => { throw new Error('boom'); };
+    });
+
+    await saveSignature(page);
+    await selectFirstSignature(page);
+    await page.click('#btn-place-sig');
+    const wrapper = page.locator('.page-wrapper').first();
+    const box     = await wrapper.boundingBox();
+    await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await expect(page.locator('.sig-overlay')).toBeVisible({ timeout: 5000 });
+
+    await page.click('#btn-save');
+    await expect(page.locator('#error-banner')).toBeVisible();
+    await expect(page.locator('#error-banner-msg')).toContainText('boom');
+    // The button must not be left stuck disabled after a failed save.
+    await expect(page.locator('#btn-save')).toBeEnabled();
   });
 });
