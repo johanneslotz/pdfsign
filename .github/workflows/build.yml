@@ -51,11 +51,17 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Check service worker precache is up to date
+        run: npm run check-sw
+
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
       - name: Run Playwright tests
-        run: node_modules/.bin/playwright test --project=desktop
+        run: node_modules/.bin/playwright test --project=desktop --project=mobile
 
       - name: Upload Playwright report on failure
         if: failure()

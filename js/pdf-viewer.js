@@ -274,12 +274,12 @@ export class PDFViewer {
       info.wrapper.appendChild(overlay);
 
       this._sigOverlayData.set(overlay, { sigDataUrl, pageNum: info.num, info });
-      this._makeDraggable(overlay, info);
+      this._makeDraggable(overlay);
       this._makeResizable(overlay, handle, info, aspect);
     };
   }
 
-  _makeDraggable(el, info) {
+  _makeDraggable(el) {
     let ox, oy, ol, ot;
 
     const start = (cx, cy) => {
