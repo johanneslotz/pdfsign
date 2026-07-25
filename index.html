@@ -246,6 +246,17 @@
           placeholder="Example:&#10;Name: Jane Doe&#10;Date of birth: 1985-03-15&#10;Email: jane@example.com&#10;Phone: +49 170 1234567&#10;Address: Musterstraße 12, 10115 Berlin, Germany&#10;IBAN: DE89 3704 0044 0532 0130 00&#10;Company: Acme GmbH&#10;Tax ID: DE123456789"></textarea>
       </div>
 
+      <div class="settings-section">
+        <h3 class="settings-section-title">Fill History</h3>
+        <p class="settings-hint">Values you've typed into form fields before, remembered so the AI can suggest them again. Back them up or move them to another device.</p>
+        <div class="sig-import-row">
+          <button id="settings-memory-export" class="btn-secondary">Export</button>
+          <label for="settings-memory-import" class="btn-secondary btn-label">Import</label>
+          <input type="file" id="settings-memory-import" accept=".json" class="file-input-hidden">
+        </div>
+        <p id="settings-memory-status" class="settings-hint"></p>
+      </div>
+
       <div class="modal-actions">
         <button id="settings-save" class="btn-primary">Save</button>
       </div>

@@ -1,3 +1,5 @@
+import { readFileAsText, triggerDownload, bindModalDismiss } from './utils.js';
+
 const LS_API_KEY   = 'pdfsign_openrouter_key';
 const LS_MODEL     = 'pdfsign_openrouter_model';
 const LS_USER_INFO = 'pdfsign_user_info';
@@ -19,6 +21,10 @@ export function loadSettings() {
     apiKey: localStorage.getItem(LS_API_KEY) || '',
     model:  localStorage.getItem(LS_MODEL)   || MODELS[0].id,
   };
+}
+
+export function getUserInfo() {
+  return localStorage.getItem(LS_USER_INFO) || '';
 }
 
 function saveAPISettings(apiKey, model) {
@@ -58,7 +64,6 @@ async function fetchVisionModels(apiKey) {
 
 export function initSettingsModal(formMemory, onSave) {
   const modal         = document.getElementById('settings-modal');
-  const backdrop      = modal.querySelector('.modal-backdrop');
   const closeBtn      = document.getElementById('settings-close');
   const saveBtn       = document.getElementById('settings-save');
   const apiKeyEl      = document.getElementById('setting-api-key');
@@ -66,6 +71,9 @@ export function initSettingsModal(formMemory, onSave) {
   const refreshBtn    = document.getElementById('setting-model-refresh');
   const refreshStatusEl = document.getElementById('setting-model-refresh-status');
   const userInfoEl    = document.getElementById('setting-user-info');
+  const memoryExportBtn = document.getElementById('settings-memory-export');
+  const memoryImportEl  = document.getElementById('settings-memory-import');
+  const memoryStatusEl  = document.getElementById('settings-memory-status');
 
   let currentModels = MODELS;
   populateModelOptions(modelEl, currentModels);
@@ -92,20 +100,50 @@ export function initSettingsModal(formMemory, onSave) {
     populateModelOptions(modelEl, currentModels, model);
     userInfoEl.value  = localStorage.getItem(LS_USER_INFO) || '';
     refreshStatusEl.textContent = '';
+    memoryStatusEl.textContent  = '';
     modal.classList.remove('hidden');
     userInfoEl.focus();
+  }
+
+  function close() {
+    modal.classList.add('hidden');
   }
 
   function save() {
     saveAPISettings(apiKeyEl.value.trim(), modelEl.value);
     localStorage.setItem(LS_USER_INFO, userInfoEl.value);
-    modal.classList.add('hidden');
+    close();
     if (onSave) onSave({ apiKey: apiKeyEl.value.trim(), model: modelEl.value });
   }
 
+  async function exportMemory() {
+    const data    = await formMemory.exportMemory();
+    const entries = data.history?.length || 0;
+    if (!entries) { memoryStatusEl.textContent = 'No fill history to export yet.'; return; }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    triggerDownload(URL.createObjectURL(blob), 'pdfsign-fill-history.json');
+    memoryStatusEl.textContent = `Exported ${entries} field${entries === 1 ? '' : 's'}.`;
+  }
+
+  async function importMemoryFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    try {
+      const data = JSON.parse(await readFileAsText(file));
+      await formMemory.importMemory(data);
+      const entries = data.history?.length || 0;
+      memoryStatusEl.textContent = `Imported ${entries} field${entries === 1 ? '' : 's'}.`;
+    } catch (err) {
+      memoryStatusEl.textContent = 'Import failed: ' + err.message;
+    }
+  }
+
   document.getElementById('btn-settings').onclick = open;
-  closeBtn.onclick    = () => modal.classList.add('hidden');
-  backdrop.onclick    = () => modal.classList.add('hidden');
+  closeBtn.onclick    = close;
+  bindModalDismiss(modal, close);
   saveBtn.onclick     = save;
   refreshBtn.onclick  = refreshModels;
+  memoryExportBtn.onclick = exportMemory;
+  memoryImportEl.addEventListener('change', importMemoryFile);
 }

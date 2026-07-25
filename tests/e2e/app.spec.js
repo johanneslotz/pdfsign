@@ -191,6 +191,146 @@ test.describe('Storage', () => {
   });
 });
 
+test.describe('AI assistant — vision API requests', () => {
+  // Mocks OpenRouter so analyzeFormPage() and chat() — the two callers of
+  // VisionAPI's shared _streamCompletion() — can be exercised end to end
+  // without a real API key or network access. Streams a single SSE chunk in
+  // the shape readStream() parses: "data: {...}\n\ndata: [DONE]\n\n".
+  async function mockOpenRouter(page, { formContent, chatContent }) {
+    // Routed at the browser-context level: the app's service worker
+    // re-issues every fetch from its own scope (for network-first caching),
+    // and page.route() alone doesn't see requests replayed that way.
+    await page.context().route('https://openrouter.ai/api/v1/chat/completions', async route => {
+      const body = route.request().postDataJSON();
+      const isAnalyze = JSON.stringify(body.messages).includes('Analyze this PDF page image');
+      const content = isAnalyze ? formContent : chatContent;
+      const sse = `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`;
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: sse,
+      });
+    });
+  }
+
+  async function setApiKey(page) {
+    await page.click('#btn-settings');
+    await page.fill('#setting-api-key', 'sk-or-test-key');
+    await page.click('#settings-save');
+  }
+
+  test('Analyze sends the page image and renders the field the mock returns', async ({ page }) => {
+    await mockOpenRouter(page, {
+      formContent: JSON.stringify({
+        isForm: true,
+        fields: [{
+          label: 'Full Name', canonicalKey: 'full_name', type: 'text',
+          inputPosition: { top: 20, left: 10 }, suggestedValue: '', required: false,
+        }],
+      }),
+      chatContent: 'unused',
+    });
+
+    await page.goto('/');
+    await loadPDF(page);
+    await setApiKey(page);
+    await page.click('#btn-ai');   // loadPDF() hides the auto-opened panel
+
+    await page.click('#ai-analyze');
+    await expect(page.locator('.ai-field-item')).toHaveCount(1, { timeout: 10000 });
+    await expect(page.locator('.ai-field-label')).toContainText('Full Name');
+  });
+
+  test('Chat sends page context and renders the mocked reply', async ({ page }) => {
+    await mockOpenRouter(page, {
+      formContent: 'unused',
+      chatContent: 'This document is a one-page sample.',
+    });
+
+    await page.goto('/');
+    await loadPDF(page);
+    await setApiKey(page);
+    await page.click('#btn-ai');   // loadPDF() hides the auto-opened panel
+
+    await page.click('[data-tab="chat"]');
+    await page.fill('#ai-chat-input', 'What is this document?');
+    await page.click('#ai-chat-send');
+
+    await expect(page.locator('.ai-chat-bubble-assistant .ai-chat-bubble-text'))
+      .toContainText('one-page sample', { timeout: 10000 });
+  });
+});
+
+test.describe('Settings modal', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+  });
+
+  test('closes on backdrop click', async ({ page }) => {
+    await page.click('#btn-settings');
+    await expect(page.locator('#settings-modal')).not.toHaveClass(/hidden/);
+    await page.locator('#settings-modal .modal-backdrop').click({ position: { x: 5, y: 5 } });
+    await expect(page.locator('#settings-modal')).toHaveClass(/hidden/);
+  });
+
+  test('closes on Escape', async ({ page }) => {
+    await page.click('#btn-settings');
+    await expect(page.locator('#settings-modal')).not.toHaveClass(/hidden/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#settings-modal')).toHaveClass(/hidden/);
+  });
+});
+
+test.describe('Fill history export/import', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    // Seed one history entry directly through FormMemory, the same store the
+    // AI field-fill flow writes to — this test only exercises the settings
+    // export/import wiring, not the AI panel itself.
+    await page.evaluate(async () => {
+      const { FormMemory } = await import('/js/form-memory.js');
+      await new FormMemory().recordUsage('email', 'Email', 'jane@example.com');
+    });
+  });
+
+  test('exports fill history as a downloadable JSON file', async ({ page }) => {
+    await page.click('#btn-settings');
+    const [dl] = await Promise.all([
+      page.waitForEvent('download'),
+      page.click('#settings-memory-export'),
+    ]);
+    expect(dl.suggestedFilename()).toBe('pdfsign-fill-history.json');
+
+    const json = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
+    expect(json.history).toBeInstanceOf(Array);
+    expect(json.history.some(h => h.key === 'email')).toBe(true);
+    await expect(page.locator('#settings-memory-status')).toContainText('Exported');
+  });
+
+  test('imports a fill history backup', async ({ page }) => {
+    const backupPath = path.join(__dirname, '../fixtures/fill-history.json');
+    fs.writeFileSync(backupPath, JSON.stringify({
+      history: [{ key: 'company', label: 'Company', entries: [
+        { value: 'Acme GmbH', usedCount: 3, lastUsed: Date.now() },
+      ] }],
+    }));
+
+    await page.click('#btn-settings');
+    await page.locator('#settings-memory-import').setInputFiles(backupPath);
+    await expect(page.locator('#settings-memory-status')).toContainText('Imported 1 field');
+
+    const suggestions = await page.evaluate(async () => {
+      const { FormMemory } = await import('/js/form-memory.js');
+      return new FormMemory().getSuggestions('company');
+    });
+    expect(suggestions[0]?.value).toBe('Acme GmbH');
+
+    fs.unlinkSync(backupPath);
+  });
+});
+
 test.describe('Signature drawing', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
@@ -205,6 +345,13 @@ test.describe('Signature drawing', () => {
   test('closes modal on backdrop click', async ({ page }) => {
     await page.click('#btn-signature');
     await page.locator('#sig-modal .modal-backdrop').click({ position: { x: 5, y: 5 } });
+    await expect(page.locator('#sig-modal')).toHaveClass(/hidden/);
+  });
+
+  test('closes modal on Escape', async ({ page }) => {
+    await page.click('#btn-signature');
+    await expect(page.locator('#sig-modal')).not.toHaveClass(/hidden/);
+    await page.keyboard.press('Escape');
     await expect(page.locator('#sig-modal')).toHaveClass(/hidden/);
   });
 

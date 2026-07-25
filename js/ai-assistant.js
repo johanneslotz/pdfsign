@@ -1,3 +1,5 @@
+import { getUserInfo } from './settings.js';
+
 // Splits an identifier into lowercase word tokens, treating camelCase
 // boundaries the same as underscores/spaces/dashes.
 export function tokenize(s) {
@@ -106,7 +108,7 @@ export class AIAssistant {
       try {
         imageDataUrl       = this.viewer.getPageImageDataUrl(pageNum);
         const { text }     = await this.viewer.getPageTextContent(pageNum);
-        const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
+        const userInfo     = getUserInfo();
         const result       = await this.visionApi.analyzeFormPage(
           imageDataUrl, text, userInfo,
           (_delta, full) => { streamEl.textContent = full; streamEl.scrollTop = streamEl.scrollHeight; }
@@ -206,7 +208,7 @@ export class AIAssistant {
 
     try {
       const pageContexts = await this._getPageContexts();
-      const userInfo     = localStorage.getItem('pdfsign_user_info') || '';
+      const userInfo     = getUserInfo();
       const textEl       = thinkingBubble.querySelector('.ai-chat-bubble-text');
 
       const reply = await this.visionApi.chat(

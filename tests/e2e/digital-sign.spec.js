@@ -126,6 +126,12 @@ test.describe('Digital sign modal — certs found', () => {
     await expect(page.locator('#sign-digital-modal')).toHaveClass(/hidden/);
   });
 
+  test('closes on Escape', async ({ page }) => {
+    await openModal(page);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#sign-digital-modal')).toHaveClass(/hidden/);
+  });
+
   test('clears PIN field when modal is closed and reopened', async ({ page }) => {
     await openModal(page);
     await page.locator('#sign-pin').fill('1234');

@@ -7,7 +7,8 @@ import { FormMemory }     from './form-memory.js';
 import { VisionAPI }      from './vision-api.js';
 import { AIAssistant }    from './ai-assistant.js';
 import { initSettingsModal, loadSettings } from './settings.js';
-import { isTauri, listSmartcardCerts, cryptoSign } from './sign/orchestrator.js';
+import { isTauri, listSmartcardCerts, cryptoSign, savePdfDialog } from './sign/orchestrator.js';
+import { readFileAsText, triggerDownload, debugLog, bindModalDismiss } from './utils.js';
 
 let viewer   = null;
 let editor   = null;
@@ -52,6 +53,7 @@ function init() {
   initDigitalSignUI();
   document.getElementById('sig-modal-close').onclick = closeSigModal;
   document.getElementById('sig-clear').onclick       = () => sigPad.clear();
+  bindModalDismiss(document.getElementById('sig-modal'), closeSigModal);
 
   const lwSlider = document.getElementById('sig-linewidth');
   const lwVal    = document.getElementById('sig-linewidth-val');
@@ -60,7 +62,6 @@ function init() {
     lwVal.textContent = lwSlider.value + 'px';
   };
   document.getElementById('sig-save').onclick = onSaveSig;
-  document.querySelector('#sig-modal .modal-backdrop').onclick = closeSigModal;
 
   document.getElementById('sig-export').onclick         = exportSignatures;
   document.getElementById('error-banner-close').onclick = hideError;
@@ -109,7 +110,7 @@ async function onFileSelected(e) {
 }
 
 async function loadFile(file) {
-  console.log(`[pdfsign] Loading file: ${file.name} (${(file.size / 1024).toFixed(1)} KB, type: ${file.type || 'unknown'})`);
+  debugLog(`Loading file: ${file.name} (${(file.size / 1024).toFixed(1)} KB, type: ${file.type || 'unknown'})`);
 
   document.getElementById('file-name').textContent = file.name;
   hideError();
@@ -117,7 +118,7 @@ async function loadFile(file) {
   let bytes;
   try {
     bytes = await file.arrayBuffer();
-    console.log(`[pdfsign] Read ${bytes.byteLength} bytes`);
+    debugLog(`Read ${bytes.byteLength} bytes`);
   } catch (err) {
     return showError('Could not read file', err);
   }
@@ -151,7 +152,7 @@ async function loadFile(file) {
   document.getElementById('btn-ai').disabled        = false;
   document.getElementById('btn-sign-digital').disabled = false;
 
-  console.log(`[pdfsign] Loaded ${viewer.pages.length} page(s)`);
+  debugLog(`Loaded ${viewer.pages.length} page(s)`);
   toast(`Loaded ${viewer.pages.length} page${viewer.pages.length === 1 ? '' : 's'}`);
 
   // Notify AI assistant so it opens the panel and readies the Analyze button
@@ -371,28 +372,6 @@ async function exportSignatures() {
   toast(`Exported ${sigs.length} signature${sigs.length > 1 ? 's' : ''}`);
 }
 
-function readFileAsText(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload  = () => resolve(r.result);
-    r.onerror = reject;
-    r.readAsText(file);
-  });
-}
-
-
-// ── Download helper ──────────────────────────────────────────────────────────
-
-function triggerDownload(url, filename) {
-  const a = document.createElement('a');
-  a.href     = url;
-  a.download = filename;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-}
-
 // ── Error banner ─────────────────────────────────────────────────────────────
 
 function showError(msg, err, isWarning = false) {
@@ -422,11 +401,10 @@ function toast(msg) {
 
 function initDigitalSignUI() {
   const btn = document.getElementById('btn-sign-digital');
-  if (isTauri()) {
-    btn.style.display = '';
-  } else {
-    // In the browser, swap the button for a "get the app" link.
-    btn.style.display = '';
+  btn.style.display = '';
+
+  if (!isTauri()) {
+    // In the browser, the button explains that signing needs the desktop app.
     btn.title = 'Cryptographic signing requires the desktop app';
     btn.onclick = () => toast('Cryptographic signing is only available in the desktop app.');
     return;
@@ -435,8 +413,8 @@ function initDigitalSignUI() {
   btn.onclick = openSignDigitalModal;
   document.getElementById('sign-digital-close').onclick  = closeSignDigitalModal;
   document.getElementById('sign-digital-cancel').onclick = closeSignDigitalModal;
-  document.querySelector('#sign-digital-modal .modal-backdrop').onclick = closeSignDigitalModal;
   document.getElementById('sign-digital-submit').onclick = onSignDigitalSubmit;
+  bindModalDismiss(document.getElementById('sign-digital-modal'), closeSignDigitalModal);
 }
 
 async function openSignDigitalModal() {
@@ -629,11 +607,7 @@ async function onSignDigitalSubmit() {
 
     const origName = document.getElementById('file-name').textContent.replace(/\.pdf$/i, '');
     if (isTauri()) {
-      const { invoke } = window.__TAURI__.core;
-      const saved = await invoke('save_pdf_dialog', {
-        bytes:         Array.from(signed),
-        suggestedName: `${origName}_signed.pdf`,
-      });
+      const saved = await savePdfDialog(signed, `${origName}_signed.pdf`);
       if (saved) toast('PDF signed and saved.');
     } else {
       const blob = new Blob([signed], { type: 'application/pdf' });

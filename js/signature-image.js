@@ -98,7 +98,7 @@ export function rotateQuadBy(quad, degrees) {
   });
 }
 
-export function quadOutputSize(quad, maxOut) {
+function quadOutputSize(quad, maxOut) {
   const d = (a, b) => Math.hypot(quad[a][0] - quad[b][0], quad[a][1] - quad[b][1]);
   const w = Math.max(d(0, 1), d(3, 2));
   const h = Math.max(d(0, 3), d(1, 2));
@@ -137,7 +137,7 @@ function homography(quad) {
 }
 
 /** Sample the source through the quad into an upright image. */
-export function warpQuad(source, quad, maxOut) {
+function warpQuad(source, quad, maxOut) {
   const src = source.getContext('2d', { willReadFrequently: true })
     .getImageData(0, 0, source.width, source.height);
   const { width: W, height: H } = quadOutputSize(quad, maxOut);
@@ -271,7 +271,7 @@ function upsample(src, w, h, W, H) {
  * Taking the strongest darkening across R/G/B keeps coloured pens as visible
  * as black ones — a blue pen barely dents luminance but nearly empties red.
  */
-export function inkMap(imageData) {
+function inkMap(imageData) {
   const { width: w, height: h, data } = imageData;
   const n = w * h;
   const f = Math.max(1, Math.round(Math.max(w, h) / SMALL_TARGET));
@@ -298,7 +298,7 @@ export function inkMap(imageData) {
 }
 
 /** Otsu's method over the ink histogram — the auto threshold. */
-export function otsuThreshold(ink) {
+function otsuThreshold(ink) {
   const bins = 256;
   const hist = new Float64Array(bins);
   for (let i = 0; i < ink.length; i++) {
@@ -336,7 +336,7 @@ export function otsuThreshold(ink) {
  * edge-touching blob, and letting it vote on the ink colour turns a blue pen
  * brown, so colour sampling uses the interior shapes instead.
  */
-export function despeckleMask(mask, w, h, minArea) {
+function despeckleMask(mask, w, h, minArea) {
   const n = w * h;
   const out      = new Uint8Array(n);
   const interior = new Uint8Array(n);
@@ -401,7 +401,7 @@ function dilate1(mask, w, h) {
 }
 
 /** Slider position (0..100) → minimum component area in pixels. */
-export function despeckleMinArea(slider, totalPixels) {
+function despeckleMinArea(slider, totalPixels) {
   const frac = Math.pow(Math.max(0, Math.min(100, slider)) / 100, 2) * 0.004;
   return Math.max(1, Math.round(frac * totalPixels));
 }
@@ -412,7 +412,7 @@ export function despeckleMinArea(slider, totalPixels) {
  * Sampled from the darker half of the masked pixels only: every stroke is
  * mostly edge, and averaging the anti-aliased edges in turns a black pen grey.
  */
-export function sampleInkColor(imageData, mask, ink) {
+function sampleInkColor(imageData, mask, ink) {
   let core = mask;
   if (ink) {
     const bins = 64;
@@ -459,7 +459,7 @@ export function sampleInkColor(imageData, mask, ink) {
  * Strokes get a soft ramp across the threshold so they stay smooth when the
  * stamp is scaled down onto a page.
  */
-export function renderSignature(region, ink, params = {}) {
+function renderSignature(region, ink, params = {}) {
   const p = { ...DEFAULT_PARAMS, ...params };
   const { width: w, height: h } = region;
   const n = w * h;
@@ -492,7 +492,7 @@ export function renderSignature(region, ink, params = {}) {
 }
 
 /** Crop away empty margins so the stamp sits tight around the strokes. */
-export function trimTransparent(imageData, padFrac = 0.02) {
+function trimTransparent(imageData, padFrac = 0.02) {
   const { width: w, height: h, data } = imageData;
   let minX = w, minY = h, maxX = -1, maxY = -1;
   for (let y = 0; y < h; y++) {
@@ -520,7 +520,7 @@ export function trimTransparent(imageData, padFrac = 0.02) {
   return out;
 }
 
-export function imageDataToCanvas(imageData) {
+function imageDataToCanvas(imageData) {
   const canvas = document.createElement('canvas');
   canvas.width  = imageData.width;
   canvas.height = imageData.height;
@@ -570,13 +570,13 @@ export class SignatureExtractor {
 
 // ── Colour helpers ──────────────────────────────────────────────────────────
 
-export function hexToRgb(hex) {
+function hexToRgb(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
   if (!m) return [30, 41, 59];
   const v = parseInt(m[1], 16);
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 }
 
-export function rgbToHex(r, g, b) {
+function rgbToHex(r, g, b) {
   return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 }

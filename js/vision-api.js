@@ -1,3 +1,5 @@
+import { MODELS } from './settings.js';
+
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 function buildPrompt(extractedText, userInfo) {
@@ -98,13 +100,14 @@ async function readStream(response, onToken) {
 }
 
 export class VisionAPI {
-  constructor(apiKey, model = 'google/gemini-2.0-flash-001') {
+  constructor(apiKey, model = MODELS[0].id) {
     this.apiKey = apiKey;
     this.model  = model;
   }
 
-  async analyzeFormPage(imageDataUrl, extractedText = '', userInfo = '', onToken = null) {
-    const prompt   = buildPrompt(extractedText, userInfo);
+  // Shared by analyzeFormPage and chat: identical endpoint, headers, and
+  // streamed-response handling — only the request body differs.
+  async _streamCompletion(body, onToken, emptyMessage) {
     const response = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -113,28 +116,34 @@ export class VisionAPI {
         'HTTP-Referer':  window.location.origin,
         'X-Title':       'PDFSign AI Assistant',
       },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: imageDataUrl } },
-            { type: 'text', text: prompt },
-          ],
-        }],
-        max_tokens:  4000,
-        temperature: 0.1,
-        stream:      true,
-      }),
+      body: JSON.stringify({ model: this.model, stream: true, ...body }),
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`OpenRouter ${response.status}: ${body.substring(0, 300)}`);
+      const errBody = await response.text().catch(() => '');
+      throw new Error(`OpenRouter ${response.status}: ${errBody.substring(0, 300)}`);
     }
 
     const content = await readStream(response, onToken || (() => {}));
-    if (!content) throw new Error('Empty response from vision model');
+    if (!content) throw new Error(emptyMessage);
+    return content;
+  }
+
+  async analyzeFormPage(imageDataUrl, extractedText = '', userInfo = '', onToken = null) {
+    const prompt = buildPrompt(extractedText, userInfo);
+    const body = {
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: imageDataUrl } },
+          { type: 'text', text: prompt },
+        ],
+      }],
+      max_tokens:  4000,
+      temperature: 0.1,
+    };
+
+    const content = await this._streamCompletion(body, onToken, 'Empty response from vision model');
 
     try {
       const result = extractJSON(content);
@@ -191,30 +200,7 @@ export class VisionAPI {
       messages.push({ role: history[i].role, content: history[i].content });
     }
 
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type':  'application/json',
-        'HTTP-Referer':  window.location.origin,
-        'X-Title':       'PDFSign AI Assistant',
-      },
-      body: JSON.stringify({
-        model:       this.model,
-        messages,
-        max_tokens:  2000,
-        temperature: 0.3,
-        stream:      true,
-      }),
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`OpenRouter ${response.status}: ${body.substring(0, 300)}`);
-    }
-
-    const content = await readStream(response, onToken || (() => {}));
-    if (!content) throw new Error('Empty response from model');
-    return content;
+    const body = { messages, max_tokens: 2000, temperature: 0.3 };
+    return this._streamCompletion(body, onToken, 'Empty response from model');
   }
 }

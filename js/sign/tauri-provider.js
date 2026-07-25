@@ -12,4 +12,8 @@ export class TauriProvider {
     });
     return new Uint8Array(result.signed_pdf);
   }
+
+  async savePdfDialog(bytes, suggestedName) {
+    return invoke('save_pdf_dialog', { bytes: Array.from(bytes), suggestedName });
+  }
 }

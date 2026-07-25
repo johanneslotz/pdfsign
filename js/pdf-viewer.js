@@ -1,3 +1,5 @@
+import { debugLog } from './utils.js';
+
 export class PDFViewer {
   constructor(container) {
     this.container = container;
@@ -12,9 +14,9 @@ export class PDFViewer {
   async load(arrayBuffer) {
     this.container.innerHTML = '';
     this.pages = [];
-    console.log('[pdfsign] PDF.js: loading document…');
+    debugLog('PDF.js: loading document…');
     this.pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    console.log(`[pdfsign] PDF.js: ${this.pdfDoc.numPages} page(s) found`);
+    debugLog(`PDF.js: ${this.pdfDoc.numPages} page(s) found`);
     for (let i = 1; i <= this.pdfDoc.numPages; i++) {
       try {
         await this._renderPage(i);
@@ -29,13 +31,13 @@ export class PDFViewer {
   }
 
   async _renderPage(num) {
-    console.log(`[pdfsign] Rendering page ${num}…`);
+    debugLog(`Rendering page ${num}…`);
     const pdfPage = await this.pdfDoc.getPage(num);
     const containerWidth = Math.min(this.container.clientWidth - 32, 1000) || 800;
     const naturalVP = pdfPage.getViewport({ scale: 1 });
     const scale = containerWidth / naturalVP.width;
     const viewport = pdfPage.getViewport({ scale });
-    console.log(`[pdfsign] Page ${num}: ${Math.round(naturalVP.width)}×${Math.round(naturalVP.height)}pt → scale ${scale.toFixed(2)} → ${Math.round(viewport.width)}×${Math.round(viewport.height)}px`);
+    debugLog(`Page ${num}: ${Math.round(naturalVP.width)}×${Math.round(naturalVP.height)}pt → scale ${scale.toFixed(2)} → ${Math.round(viewport.width)}×${Math.round(viewport.height)}px`);
 
     const wrapper = document.createElement('div');
     wrapper.className = 'page-wrapper';
